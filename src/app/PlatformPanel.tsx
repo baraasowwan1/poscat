@@ -1299,12 +1299,32 @@ export function PlatformAuditScreen({ auditLogs: auditLogsProp, stores: storesPr
   );
 }
 
+const PLATFORM_SETTINGS_KEY = "sowwan_platform_settings";
+
+function loadPlatformSettings() {
+  try {
+    const s = localStorage.getItem(PLATFORM_SETTINGS_KEY);
+    if (s) return JSON.parse(s);
+  } catch {}
+  return { platformName: "منصة POS الذكي", supportEmail: "support@pos-platform.io", trialDays: "14", maintenanceMode: false, allowRegistration: true };
+}
+
 export function PlatformSettingsScreen() {
-  const [platformName, setPlatformName] = useState("منصة POS الذكي");
-  const [supportEmail, setSupportEmail] = useState("support@pos-platform.io");
-  const [trialDays, setTrialDays] = useState("14");
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [allowRegistration, setAllowRegistration] = useState(true);
+  const defaults = loadPlatformSettings();
+  const [platformName, setPlatformName] = useState<string>(defaults.platformName);
+  const [supportEmail, setSupportEmail] = useState<string>(defaults.supportEmail);
+  const [trialDays, setTrialDays] = useState<string>(defaults.trialDays);
+  const [maintenanceMode, setMaintenanceMode] = useState<boolean>(defaults.maintenanceMode);
+  const [allowRegistration, setAllowRegistration] = useState<boolean>(defaults.allowRegistration);
+  const [saved, setSaved] = useState(false);
+
+  function saveSettings() {
+    const settings = { platformName, supportEmail, trialDays, maintenanceMode, allowRegistration };
+    localStorage.setItem(PLATFORM_SETTINGS_KEY, JSON.stringify(settings));
+    setSaved(true);
+    toast.success("تم حفظ إعدادات المنصة");
+    setTimeout(() => setSaved(false), 2500);
+  }
 
   return (
     <div className="p-6 max-w-2xl">
@@ -1336,7 +1356,9 @@ export function PlatformSettingsScreen() {
             </div>
           ))}
         </div>
-        <button onClick={() => toast.success("تم حفظ إعدادات المنصة")} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-bold transition-all">حفظ الإعدادات</button>
+        <button onClick={saveSettings} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${saved ? "bg-emerald-600 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}>
+          {saved ? <><CheckCircle2 size={16} /> تم الحفظ!</> : "حفظ الإعدادات"}
+        </button>
       </div>
       <div className="mt-6 card rounded-2xl border border-red-500/20 p-6 bg-red-500/5">
         <h3 className="font-black text-red-400 text-lg mb-4 flex items-center gap-2"><AlertCircle size={18} /> منطقة الخطر</h3>
