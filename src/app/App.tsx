@@ -22,6 +22,7 @@ import { generateSlug, PLATFORM_DOMAIN, storeLoginUrl } from "./types";
 import { apiLogin, apiLogout, storesApi, usersApi } from "../lib/useApiData";
 import { SectorProvider, useSector } from "./SectorContext";
 import { getSectorConfig } from "./sectorConfig";
+import { fetchByBarcode, searchByName, type OFFProduct } from "../lib/openFoodFacts";
 import {
   PlatformSidebar, PlatformTopBar,
   PlatformDashboardScreen, PlatformStoresScreen, PlatformUsersScreen,
@@ -1229,6 +1230,7 @@ function POSScreen({ onSaleComplete, products, payments, company, companyLogo }:
   const { config: sectorCfg } = useSector();
   const cats = ["الكل", ...sectorCfg.categories];
   const activeProducts = products.filter(p => p.status !== "inactive");
+  const [offSuggestion, setOffSuggestion] = useState<OFFProduct | null>(null);
   const filtered = activeProducts.filter(p =>
     (activeCategory === "الكل" || p.category === activeCategory) &&
     (p.nameAr.includes(searchQ) || (p.barcode || "").includes(searchQ) || (p.sku || "").toLowerCase().includes(searchQ.toLowerCase()))
@@ -1261,8 +1263,14 @@ function POSScreen({ onSaleComplete, products, payments, company, companyLogo }:
     } else {
       setLastScanned(trimmed);
       setScanStatus("notfound");
-      setSearchQ(trimmed);  // show in search so user can see what was scanned
+      setSearchQ(trimmed);
       setTimeout(() => setScanStatus("idle"), 2500);
+      // If supermarket sector → try Open Food Facts in background
+      if (sectorCfg.id === "supermarket") {
+        fetchByBarcode(trimmed).then(r => {
+          if (r) setOffSuggestion(r);
+        });
+      }
     }
   }
 
@@ -1385,6 +1393,15 @@ function POSScreen({ onSaleComplete, products, payments, company, companyLogo }:
               {scanStatus === "found"    && `✓ ${lastScanned.slice(0, 12)}${lastScanned.length > 12 ? "…" : ""}`}
               {scanStatus === "notfound" && `لم يُوجد: ${lastScanned.slice(0, 10)}`}
             </div>
+
+            {/* OFF suggestion toast when barcode not found */}
+            {offSuggestion && scanStatus !== "scanning" && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-semibold max-w-xs">
+                {offSuggestion.image && <img src={offSuggestion.image} className="w-6 h-6 rounded object-contain bg-white" alt="" />}
+                <span className="truncate">{offSuggestion.nameAr || offSuggestion.nameEn}</span>
+                <button onClick={() => setOffSuggestion(null)} className="mr-auto text-muted-foreground hover:text-foreground"><X size={12} /></button>
+              </div>
+            )}
 
             {/* Cash Drawer button */}
             <div className="flex items-center gap-1">
@@ -1618,6 +1635,123 @@ function POSScreen({ onSaleComplete, products, payments, company, companyLogo }:
   );
 }
 
+// ─── Open Food Facts Import Modal ─────────────────────────────────────────────
+function OFFImportModal({ onImport, onClose }: {
+  onImport: (p: OFFProduct) => void;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"barcode" | "name">("barcode");
+  const [barcode, setBarcode] = useState("");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<OFFProduct[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [found, setFound] = useState<OFFProduct | null>(null);
+
+  async function searchBarcode() {
+    if (!barcode.trim()) return;
+    setLoading(true); setFound(null);
+    const r = await fetchByBarcode(barcode.trim());
+    setLoading(false);
+    if (r) setFound(r);
+    else toast.error("لم يُعثر على المنتج في قاعدة Open Food Facts");
+  }
+
+  async function searchName() {
+    if (!query.trim()) return;
+    setLoading(true); setResults([]);
+    const r = await searchByName(query.trim());
+    setLoading(false);
+    if (r.length) setResults(r);
+    else toast.error("لا توجد نتائج — جرّب اسماً آخر");
+  }
+
+  const inputCls = "w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary";
+
+  function ProductCard({ p }: { p: OFFProduct }) {
+    return (
+      <div className="flex items-start gap-3 p-3 rounded-xl bg-foreground/4 border border-border hover:border-primary/40 transition-all">
+        {p.image ? (
+          <img src={p.image} alt={p.nameAr} className="w-14 h-14 rounded-lg object-contain bg-white shrink-0 border border-border" />
+        ) : (
+          <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center shrink-0"><Package size={22} className="text-muted-foreground" /></div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-sm text-foreground truncate">{p.nameAr || p.nameEn}</p>
+          {p.nameEn && p.nameAr && <p className="text-xs text-muted-foreground truncate">{p.nameEn}</p>}
+          <div className="flex gap-2 mt-1 flex-wrap">
+            {p.brand && <span className="text-[10px] bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-full">{p.brand}</span>}
+            {p.quantity && <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{p.quantity}</span>}
+            {p.category && <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">{p.category}</span>}
+          </div>
+          {p.barcode && <p className="text-[10px] text-muted-foreground mt-1 font-mono">{p.barcode}</p>}
+        </div>
+        <button onClick={() => onImport(p)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 transition-all">
+          <Plus size={13} /> استيراد
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Globe size={18} className="text-primary" />
+            <h3 className="font-black text-foreground text-lg">استيراد من Open Food Facts</h3>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="flex gap-1 p-4 pb-0">
+          {([["barcode","بالباركود"],["name","بالاسم"]] as const).map(([t, l]) => (
+            <button key={t} onClick={() => { setTab(t); setFound(null); setResults([]); }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${tab === t ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 space-y-3 overflow-y-auto flex-1">
+          {tab === "barcode" ? (
+            <>
+              <div className="flex gap-2">
+                <input value={barcode} onChange={e => setBarcode(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && searchBarcode()}
+                  placeholder="أدخل رقم الباركود..." dir="ltr" className={inputCls} />
+                <button onClick={searchBarcode} disabled={loading}
+                  className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-all disabled:opacity-50 shrink-0">
+                  {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
+                </button>
+              </div>
+              {found && <ProductCard p={found} />}
+            </>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <input value={query} onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && searchName()}
+                  placeholder="اسم المنتج أو الماركة..." className={inputCls} />
+                <button onClick={searchName} disabled={loading}
+                  className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-all disabled:opacity-50 shrink-0">
+                  {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
+                </button>
+              </div>
+              {loading && <div className="text-center py-6 text-muted-foreground text-sm">جاري البحث...</div>}
+              <div className="space-y-2">
+                {results.map((p, i) => <ProductCard key={i} p={p} />)}
+              </div>
+            </>
+          )}
+          <p className="text-[11px] text-muted-foreground text-center pt-2">
+            البيانات من <a href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer" className="underline">Open Food Facts</a> — مفتوح المصدر ومجاني
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Products Screen ──────────────────────────────────────────────────────────
 function ProductsScreen({ products, setProducts }: { products: Product[]; setProducts: (u: Product[] | ((p: Product[]) => Product[])) => void }) {
   const { config: sectorCfg } = useSector();
@@ -1628,9 +1762,31 @@ function ProductsScreen({ products, setProducts }: { products: Product[]; setPro
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
+  const [showOFF, setShowOFF] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const emptyForm = { nameAr: "", sku: "", barcode: "", price: "", cost: "", stock: "", minStock: "5", category: sectorCfg.defaultCategory, status: "نشط", image: "" };
   const [form, setForm] = useState(emptyForm);
+  const isSupermarket = sectorCfg.id === "supermarket";
+
+  function importFromOFF(p: OFFProduct) {
+    const sku = p.barcode || `OFF-${Date.now()}`;
+    setForm({
+      nameAr: p.nameAr || p.nameEn,
+      sku,
+      barcode: p.barcode,
+      price: "",
+      cost: "",
+      stock: "0",
+      minStock: "5",
+      category: p.category || sectorCfg.defaultCategory,
+      status: "نشط",
+      image: p.image,
+    });
+    setShowOFF(false);
+    setEditProduct(null);
+    setShowAdd(true);
+    toast.success(`تم استيراد "${p.nameAr || p.nameEn}" — أضف السعر وأكمل الحفظ`);
+  }
   const cats = ["الكل", ...PRODUCT_CATS];
   const filtered = products.filter(p =>
     (categoryFilter === "الكل" || p.category === categoryFilter) &&
@@ -1899,8 +2055,15 @@ function ProductsScreen({ products, setProducts }: { products: Product[]; setPro
         <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> تصدير CSV</button>
         <button onClick={() => importRef.current?.click()} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Upload size={15} /> استيراد CSV</button>
         <button onClick={printLabels} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Printer size={15} /> طباعة بطاقات</button>
+        {isSupermarket && (
+          <button onClick={() => setShowOFF(true)} className="flex items-center gap-2 px-4 py-2.5 border border-emerald-500/30 text-emerald-400 bg-emerald-500/8 rounded-xl text-sm font-semibold hover:bg-emerald-500/15 transition-all">
+            <Globe size={15} /> استيراد OFF
+          </button>
+        )}
         <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-blue-500/20"><Plus size={15} /> منتج جديد</button>
       </div>
+
+      {showOFF && <OFFImportModal onImport={importFromOFF} onClose={() => setShowOFF(false)} />}
 
       <div className="grid grid-cols-4 gap-4">
         <KPICard title="إجمالي المنتجات" value={fmt(products.length)} icon={Package} color="bg-blue-500" />
