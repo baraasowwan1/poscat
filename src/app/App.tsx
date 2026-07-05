@@ -3995,15 +3995,10 @@ export default function App({
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
     const stored: TenantStore[] = lsGet("tenantStores", []);
+    // First ever load → seed with demo data
     if (!stored.length) return INIT_STORES;
-    const demoIds = new Set(INIT_STORES.map(s => s.storeId));
-    const hasUserStores = stored.some(s => !demoIds.has(s.storeId));
-    // If only demo stores exist, wipe and use fresh INIT_STORES (they have sectors)
-    if (!hasUserStores) return INIT_STORES;
-    // Merge: keep user stores as-is, replace demo entries with fresh INIT_STORES
-    const userStores = stored.filter(s => !demoIds.has(s.storeId));
-    const demoStores = INIT_STORES; // always fresh with correct sectors
-    return [...demoStores, ...userStores];
+    // Trust localStorage as source of truth — only patch missing sector field
+    return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => lsGet("auditLogs", INIT_AUDIT_LOGS));
