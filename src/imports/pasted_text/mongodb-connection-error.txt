@@ -1,0 +1,100 @@
+2026-07-05T17:13:22.827328972Z ========== MongoDB Debug ==========
+2026-07-05T17:13:22.827669331Z MONGODB_URI exists: true
+2026-07-05T17:13:22.827695833Z URI Preview: mongodb+srv://broosowwan_db_us...
+2026-07-05T17:13:23.22654338Z 🚀 SOWWAN POS Server on port 10000 [production]
+2026-07-05T17:13:53.329543119Z Mongo Error: MongooseServerSelectionError: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2026-07-05T17:13:53.329574411Z     at _handleConnectionErrors (/opt/render/project/src/node_modules/mongoose/lib/connection.js:1169:11)
+2026-07-05T17:13:53.329577921Z     at NativeConnection.openUri (/opt/render/project/src/node_modules/mongoose/lib/connection.js:1100:11)
+2026-07-05T17:13:53.329581562Z     at async connectDB (/opt/render/project/src/dist/config/db.js:22:22) {
+2026-07-05T17:13:53.329585472Z   errorLabelSet: Set(0) {},
+2026-07-05T17:13:53.329588342Z   reason: TopologyDescription {
+2026-07-05T17:13:53.329591052Z     type: 'ReplicaSetNoPrimary',
+2026-07-05T17:13:53.329594402Z     servers: Map(3) {
+2026-07-05T17:13:53.329597262Z       'ac-ymqq2o9-shard-00-02.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:13:53.329600263Z       'ac-ymqq2o9-shard-00-00.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:13:53.329603303Z       'ac-ymqq2o9-shard-00-01.cnz7iay.mongodb.net:27017' => [ServerDescription]
+2026-07-05T17:13:53.329606243Z     },
+2026-07-05T17:13:53.329609073Z     stale: false,
+2026-07-05T17:13:53.329612063Z     compatible: true,
+2026-07-05T17:13:53.329614833Z     heartbeatFrequencyMS: 10000,
+2026-07-05T17:13:53.329617673Z     localThresholdMS: 15,
+2026-07-05T17:13:53.329623024Z     setName: 'atlas-d7acnd-shard-0',
+2026-07-05T17:13:53.329626004Z     maxElectionId: null,
+2026-07-05T17:13:53.329628834Z     maxSetVersion: null,
+2026-07-05T17:13:53.329631684Z     commonWireVersion: 0,
+2026-07-05T17:13:53.329634454Z     logicalSessionTimeoutMinutes: null
+2026-07-05T17:13:53.329637225Z   },
+2026-07-05T17:13:53.329640225Z   code: undefined,
+2026-07-05T17:13:53.329643285Z   cause: TopologyDescription {
+2026-07-05T17:13:53.329646145Z     type: 'ReplicaSetNoPrimary',
+2026-07-05T17:13:53.329648915Z     servers: Map(3) {
+2026-07-05T17:13:53.329651915Z       'ac-ymqq2o9-shard-00-02.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:13:53.329654866Z       'ac-ymqq2o9-shard-00-00.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:13:53.329657646Z       'ac-ymqq2o9-shard-00-01.cnz7iay.mongodb.net:27017' => [ServerDescription]
+2026-07-05T17:13:53.329660606Z     },
+2026-07-05T17:13:53.329663716Z     stale: false,
+2026-07-05T17:13:53.329666566Z     compatible: true,
+2026-07-05T17:13:53.329669447Z     heartbeatFrequencyMS: 10000,
+2026-07-05T17:13:53.329672207Z     localThresholdMS: 15,
+2026-07-05T17:13:53.329675127Z     setName: 'atlas-d7acnd-shard-0',
+2026-07-05T17:13:53.329677947Z     maxElectionId: null,
+2026-07-05T17:13:53.329680897Z     maxSetVersion: null,
+2026-07-05T17:13:53.329683787Z     commonWireVersion: 0,
+2026-07-05T17:13:53.329686737Z     logicalSessionTimeoutMinutes: null
+2026-07-05T17:13:53.329689537Z   }
+2026-07-05T17:13:53.329692448Z }
+2026-07-05T17:14:26.33636777Z ==> Running 'npm start'
+2026-07-05T17:14:27.145043571Z 
+2026-07-05T17:14:27.145066132Z > pos-supermarket-backend@1.0.0 start
+2026-07-05T17:14:27.145072013Z > node dist/server.js
+2026-07-05T17:14:27.145075243Z 
+2026-07-05T17:14:30.239934894Z ========== MongoDB Debug ==========
+2026-07-05T17:14:30.240234361Z MONGODB_URI exists: true
+2026-07-05T17:14:30.240296325Z URI Preview: mongodb+srv://broosowwan_db_us...
+2026-07-05T17:14:30.635334814Z 🚀 SOWWAN POS Server on port 10000 [production]
+2026-07-05T17:15:00.746405254Z Mongo Error: MongooseServerSelectionError: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/
+2026-07-05T17:15:00.746428315Z     at _handleConnectionErrors (/opt/render/project/src/node_modules/mongoose/lib/connection.js:1169:11)
+2026-07-05T17:15:00.746471258Z     at NativeConnection.openUri (/opt/render/project/src/node_modules/mongoose/lib/connection.js:1100:11)
+2026-07-05T17:15:00.746477828Z     at async connectDB (/opt/render/project/src/dist/config/db.js:22:22) {
+2026-07-05T17:15:00.746482298Z   errorLabelSet: Set(0) {},
+2026-07-05T17:15:00.746485318Z   reason: TopologyDescription {
+2026-07-05T17:15:00.746488319Z     type: 'ReplicaSetNoPrimary',
+2026-07-05T17:15:00.746491649Z     servers: Map(3) {
+2026-07-05T17:15:00.746494819Z       'ac-ymqq2o9-shard-00-00.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:15:00.746497909Z       'ac-ymqq2o9-shard-00-01.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:15:00.746501029Z       'ac-ymqq2o9-shard-00-02.cnz7iay.mongodb.net:27017' => [ServerDescription]
+2026-07-05T17:15:00.7465042Z     },
+2026-07-05T17:15:00.74650732Z     stale: false,
+2026-07-05T17:15:00.74651032Z     compatible: true,
+2026-07-05T17:15:00.74651434Z     heartbeatFrequencyMS: 10000,
+2026-07-05T17:15:00.7465192Z     localThresholdMS: 15,
+2026-07-05T17:15:00.746525161Z     setName: 'atlas-d7acnd-shard-0',
+2026-07-05T17:15:00.746530331Z     maxElectionId: null,
+2026-07-05T17:15:00.746535091Z     maxSetVersion: null,
+2026-07-05T17:15:00.746539491Z     commonWireVersion: 0,
+2026-07-05T17:15:00.746544162Z     logicalSessionTimeoutMinutes: null
+2026-07-05T17:15:00.746548682Z   },
+2026-07-05T17:15:00.746553582Z   code: undefined,
+2026-07-05T17:15:00.746557483Z   cause: TopologyDescription {
+2026-07-05T17:15:00.746560543Z     type: 'ReplicaSetNoPrimary',
+2026-07-05T17:15:00.746563513Z     servers: Map(3) {
+2026-07-05T17:15:00.746566553Z       'ac-ymqq2o9-shard-00-00.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:15:00.746569593Z       'ac-ymqq2o9-shard-00-01.cnz7iay.mongodb.net:27017' => [ServerDescription],
+2026-07-05T17:15:00.746572683Z       'ac-ymqq2o9-shard-00-02.cnz7iay.mongodb.net:27017' => [ServerDescription]
+2026-07-05T17:15:00.746575644Z     },
+2026-07-05T17:15:00.746578594Z     stale: false,
+2026-07-05T17:15:00.746581564Z     compatible: true,
+2026-07-05T17:15:00.746584584Z     heartbeatFrequencyMS: 10000,
+2026-07-05T17:15:00.746598715Z     localThresholdMS: 15,
+2026-07-05T17:15:00.746603415Z     setName: 'atlas-d7acnd-shard-0',
+2026-07-05T17:15:00.746608195Z     maxElectionId: null,
+2026-07-05T17:15:00.746612686Z     maxSetVersion: null,
+2026-07-05T17:15:00.746617186Z     commonWireVersion: 0,
+2026-07-05T17:15:00.746621736Z     logicalSessionTimeoutMinutes: null
+2026-07-05T17:15:00.746626256Z   }
+2026-07-05T17:15:00.746630917Z }
+2026-07-05T17:15:49.306014035Z ==> Running 'npm start'
+2026-07-05T17:15:50.30134229Z 
+2026-07-05T17:15:50.301363871Z > pos-supermarket-backend@1.0.0 start
+2026-07-05T17:15:50.301368492Z > node dist/server.js
+2026-07-05T17:15:50.301370552Z 
