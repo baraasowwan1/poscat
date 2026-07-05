@@ -43,9 +43,11 @@ interface Supplier {
   id: number; name: string; contact: string; phone: string; email: string;
   city: string; balance: number; status: string; products: number;
 }
+interface SaleLineItem { productId: number; nameAr: string; qty: number; price: number; }
 interface Sale {
   id: string; customer: string; cashier: string; amount: number;
   items: number; status: string; time: string; method: string; date: string;
+  lineItems?: SaleLineItem[];
 }
 interface Purchase {
   id: string; supplier: string; items: number; total: number;
@@ -1335,7 +1337,14 @@ function POSScreen({ onSaleComplete, products, payments, company, companyLogo }:
     const id = `INV-2024-0${invoiceCounter++}`;
     setLastInvoiceId(id);
     const nowDate = new Date();
-    const newSale: Sale = { id, customer: selectedCustomer || "عميل نقدي", cashier: "أحمد المدير", amount: total, items: cart.length, status: "مكتمل", time: nowDate.toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit" }), date: nowDate.toLocaleDateString("ar-JO", { year: "numeric", month: "long", day: "numeric" }), method: paymentMethod };
+    const newSale: Sale = {
+      id, customer: selectedCustomer || "عميل نقدي", cashier: "أحمد المدير",
+      amount: total, items: cart.length, status: "مكتمل",
+      time: nowDate.toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit" }),
+      date: nowDate.toLocaleDateString("ar-JO", { year: "numeric", month: "long", day: "numeric" }),
+      method: paymentMethod,
+      lineItems: cart.map(c => ({ productId: c.id, nameAr: c.nameAr, qty: c.qty, price: c.price })),
+    };
     onSaleComplete(newSale);
     toast.success(`تمت عملية البيع بنجاح — ${id}`);
     openCashDrawer(true); // auto-open cash drawer silently
@@ -2684,7 +2693,12 @@ function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Pu
           <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث برقم PO أو اسم المورد..." className="w-full bg-input-background border border-border rounded-xl pr-9 pl-4 py-2.5 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary" />
         </div>
-        <button onClick={() => toast.info("تصدير تقرير المشتريات...")} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> تصدير</button>
+        <button onClick={() => {
+          const headers = ["رقم الطلب","المورد","الأصناف","الإجمالي JOD","التاريخ","الحالة","مستلم"];
+          const rows = filtered.map(p => [p.id, p.supplier, p.items, p.total.toFixed(3), p.date, p.status, p.received ? "نعم" : "لا"]);
+          downloadCSV(`purchases-${new Date().toISOString().slice(0,10)}.csv`, rows, headers);
+          toast.success(`تم تصدير ${filtered.length} طلب شراء`);
+        }} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> تصدير</button>
         <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"><Plus size={15} /> طلب شراء جديد</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2725,7 +2739,16 @@ function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Pu
                       {p.status === "قيد الشحن" && (
                         <button onClick={() => receivePO(p.id)} className="px-2.5 py-1.5 bg-blue-500/15 text-blue-400 rounded-lg text-xs font-semibold hover:bg-blue-500/25 transition-all flex items-center gap-1"><CheckCircle2 size={12} /> استلام</button>
                       )}
-                      <button onClick={() => toast.success("طباعة أمر الشراء")} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-emerald-400 transition-all"><Printer size={14} /></button>
+                      <button onClick={() => printHTMLPage(`
+                        <h1>أمر شراء — ${p.id}</h1>
+                        <h2>التاريخ: ${p.date}</h2>
+                        <div class="kpi">
+                          <div class="kpi-card"><div class="val">${p.supplier}</div><div class="lbl">المورد</div></div>
+                          <div class="kpi-card"><div class="val">${p.items} صنف</div><div class="lbl">الأصناف</div></div>
+                          <div class="kpi-card"><div class="val">${p.total.toFixed(3)} JOD</div><div class="lbl">الإجمالي</div></div>
+                          <div class="kpi-card"><div class="val">${p.status}</div><div class="lbl">الحالة</div></div>
+                        </div>
+                      `, `أمر شراء ${p.id}`)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-emerald-400 transition-all"><Printer size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -2801,7 +2824,12 @@ function ExpensesScreen({ expenses, setExpenses }: { expenses: Expense[]; setExp
           <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث في المصاريف..." className="w-full bg-input-background border border-border rounded-xl pr-9 pl-4 py-2.5 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary" />
         </div>
-        <button onClick={() => toast.info("تصدير تقرير المصاريف...")} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> تصدير</button>
+        <button onClick={() => {
+          const headers = ["التصنيف","الوصف","المبلغ JOD","التاريخ","دفع بواسطة","معتمد"];
+          const rows = filtered.map(e => [e.category, e.description, e.amount.toFixed(3), e.date, e.paidBy, e.approved ? "نعم" : "لا"]);
+          downloadCSV(`expenses-${new Date().toISOString().slice(0,10)}.csv`, rows, headers);
+          toast.success(`تم تصدير ${filtered.length} مصروف`);
+        }} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> تصدير</button>
         <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"><Plus size={15} /> مصروف جديد</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3133,11 +3161,66 @@ function CSSBarChart({ data, dataKey, color = "#3B82F6", height = 180 }: {
   );
 }
 
+// ─── Shared export utilities ──────────────────────────────────────────────────
+function downloadCSV(filename: string, rows: string[][], headers: string[]) {
+  const BOM = "﻿"; // UTF-8 BOM for Arabic Excel compatibility
+  const csv = BOM + [headers, ...rows].map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: filename });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function printHTMLPage(html: string, title = "SOWWAN POS") {
+  const w = window.open("", "_blank");
+  if (!w) { toast.error("يرجى السماح بالنوافذ المنبثقة في المتصفح"); return; }
+  w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>${title}</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo',Arial,sans-serif;font-size:12px;color:#111;padding:16px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ddd;padding:6px 10px;text-align:right}
+    th{background:#f3f4f6;font-weight:700}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;color:#555;margin-bottom:12px}
+    .kpi{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}.kpi-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;min-width:160px}
+    .kpi-card .val{font-size:20px;font-weight:700;color:#111}.kpi-card .lbl{font-size:11px;color:#6b7280;margin-top:2px}
+    @media print{@page{margin:1cm}button{display:none}}</style></head>
+  <body>${html}<br><button onclick="window.print()" style="margin-top:16px;padding:8px 20px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨️ طباعة</button></body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
 // ─── Reports Screen ───────────────────────────────────────────────────────────
 function ReportsScreen({ sales }: { sales: Sale[] }) {
   const [activeTab, setActiveTab] = useState("المبيعات");
   const tabs = ["المبيعات", "المخزون", "الأرباح", "الموظفون", "ضريبة القيمة المضافة"];
-  const totalRevenue = sales.filter(s => s.status === "مكتمل").reduce((a, s) => a + s.amount, 0);
+  const completed = sales.filter(s => s.status === "مكتمل");
+  const totalRevenue = completed.reduce((a, s) => a + s.amount, 0);
+  const totalVat = totalRevenue * 0.16;
+  const totalProfit = totalRevenue * 0.316;
+
+  function exportReportsExcel() {
+    const headers = ["رقم الفاتورة","العميل","الكاشير","التاريخ","طريقة الدفع","المبلغ","الحالة"];
+    const rows = sales.map(s => [s.id, s.customer, s.cashier, s.date, s.method, s.amount.toFixed(3), s.status]);
+    downloadCSV(`reports-${new Date().toISOString().slice(0,10)}.csv`, rows, headers);
+    toast.success(`تم تصدير ${sales.length} سجل`);
+  }
+
+  function exportReportsPDF() {
+    const rows = sales.slice(0, 50).map((s, i) =>
+      `<tr><td>${i+1}</td><td>${s.id}</td><td>${s.customer}</td><td>${s.date}</td><td>${s.method}</td><td>${s.amount.toFixed(3)} JOD</td><td>${s.status}</td></tr>`
+    ).join("");
+    printHTMLPage(`
+      <h1>تقرير المبيعات</h1>
+      <h2>تاريخ الإصدار: ${new Date().toLocaleDateString("ar-JO")}</h2>
+      <div class="kpi">
+        <div class="kpi-card"><div class="val">${totalRevenue.toFixed(3)} JOD</div><div class="lbl">إجمالي المبيعات</div></div>
+        <div class="kpi-card"><div class="val">${totalProfit.toFixed(3)} JOD</div><div class="lbl">صافي الأرباح</div></div>
+        <div class="kpi-card"><div class="val">${totalVat.toFixed(3)} JOD</div><div class="lbl">ضريبة القيمة المضافة</div></div>
+        <div class="kpi-card"><div class="val">${sales.length}</div><div class="lbl">إجمالي الفواتير</div></div>
+      </div>
+      <table><thead><tr><th>#</th><th>الفاتورة</th><th>العميل</th><th>التاريخ</th><th>الدفع</th><th>المبلغ</th><th>الحالة</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    `, "تقرير المبيعات — SOWWAN POS");
+  }
+
+  function printReports() { exportReportsPDF(); }
 
   return (
     <div className="p-6 space-y-5">
@@ -3146,14 +3229,14 @@ function ReportsScreen({ sales }: { sales: Sale[] }) {
           {tabs.map(tab => <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === tab ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{tab}</button>)}
         </div>
         <div className="mr-auto flex items-center gap-2">
-          <button onClick={() => toast.info("تصدير Excel...")} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> Excel</button>
-          <button onClick={() => toast.info("تصدير PDF...")} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><FileText size={15} /> PDF</button>
-          <button onClick={() => toast.success("جارٍ الطباعة...")} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"><Printer size={15} /> طباعة</button>
+          <button onClick={exportReportsExcel} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><Download size={15} /> Excel</button>
+          <button onClick={exportReportsPDF} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all"><FileText size={15} /> PDF</button>
+          <button onClick={printReports} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"><Printer size={15} /> طباعة</button>
         </div>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="إجمالي المبيعات" value={fmtCurrency(totalRevenue)} sub="يناير - يوليو 2026" icon={DollarSign} color="bg-blue-500" trend="up" trendVal="+23.4%" />
-        <KPICard title="صافي الأرباح" value={fmtCurrency(totalRevenue * 0.316)} sub="هامش 31.6%" icon={TrendingUp} color="bg-emerald-500" trend="up" trendVal="+18.1%" />
+        <KPICard title="إجمالي المبيعات" value={fmtCurrency(totalRevenue)} sub="مجموع الفواتير المكتملة" icon={DollarSign} color="bg-blue-500" />
+        <KPICard title="صافي الأرباح" value={fmtCurrency(totalRevenue * 0.316)} sub="هامش ربح تقديري 31.6%" icon={TrendingUp} color="bg-emerald-500" />
         <KPICard title="إجمالي الطلبات" value={fmt(sales.length)} sub={`متوسط ${Math.round(sales.length / 7)}/يوم`} icon={ShoppingBag} color="bg-purple-500" />
         <KPICard title="ضريبة المبيعات" value={fmtCurrency(totalRevenue * 0.16)} sub="VAT 16%" icon={Percent} color="bg-amber-500" />
       </div>
@@ -3164,29 +3247,48 @@ function ReportsScreen({ sales }: { sales: Sale[] }) {
         </div>
         <div className="bg-card border border-border rounded-2xl p-5">
           <h3 className="font-bold text-foreground mb-4">أفضل المنتجات مبيعاً</h3>
-          <div className="space-y-3">
-            {[
-              { name: "آيفون 15 برو ماكس", sales: 142, revenue: 184758 },
-              { name: "سامسونج جالكسي S24", sales: 98, revenue: 88102 },
-              { name: "لاب توب ديل XPS 15", sales: 71, revenue: 124250 },
-              { name: "سماعات سوني WH-1000XM5", sales: 203, revenue: 77140 },
-              { name: "ساعة ذكية آبل", sales: 88, revenue: 48400 },
-            ].map((p, i) => (
-              <div key={p.name} className="flex items-center gap-3">
-                <span className="text-muted-foreground text-sm w-5 text-center font-bold">{i + 1}</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-medium text-foreground">{p.name}</p>
-                    <p className="text-sm font-bold text-foreground">{fmtCurrency(p.revenue)}</p>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-1.5">
-                    <div className="bg-primary rounded-full h-1.5" style={{ width: `${(p.revenue / 184758) * 100}%` }} />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{p.sales} وحدة مباعة</p>
-                </div>
+          {(() => {
+            // Aggregate from real sale line items
+            const map = new Map<string, { qty: number; revenue: number }>();
+            sales.filter(s => s.status === "مكتمل" && s.lineItems?.length).forEach(s => {
+              s.lineItems!.forEach(li => {
+                const cur = map.get(li.nameAr) ?? { qty: 0, revenue: 0 };
+                map.set(li.nameAr, { qty: cur.qty + li.qty, revenue: cur.revenue + li.qty * li.price });
+              });
+            });
+            const top = [...map.entries()]
+              .map(([name, v]) => ({ name, ...v }))
+              .sort((a, b) => b.revenue - a.revenue)
+              .slice(0, 5);
+            const maxRev = top[0]?.revenue || 1;
+
+            if (!top.length) return (
+              <div className="text-center py-10 text-muted-foreground">
+                <Package size={36} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">لا توجد مبيعات بعد — ستظهر البيانات بعد أول عملية بيع</p>
               </div>
-            ))}
-          </div>
+            );
+
+            return (
+              <div className="space-y-3">
+                {top.map((p, i) => (
+                  <div key={p.name} className="flex items-center gap-3">
+                    <span className="text-muted-foreground text-sm w-5 text-center font-bold">{i + 1}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-medium text-foreground truncate max-w-[60%]">{p.name}</p>
+                        <p className="text-sm font-bold text-foreground">{fmtCurrency(p.revenue)}</p>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-1.5">
+                        <div className="bg-primary rounded-full h-1.5 transition-all" style={{ width: `${(p.revenue / maxRev) * 100}%` }} />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{p.qty} وحدة مباعة</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -3619,7 +3721,12 @@ function SecurityTab() {
       <div className="bg-card border border-border rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-foreground">سجل تسجيل الدخول</h3>
-          <button onClick={() => toast.info("تصدير السجل كـ CSV")} className="text-xs text-primary hover:underline">تصدير</button>
+          <button onClick={() => {
+            const headers = ["المستخدم","عنوان IP","الوقت","الحالة"];
+            const rows = loginLogs.map(l => [l.user, l.ip, l.time, l.ok ? "ناجح" : "فاشل"]);
+            downloadCSV(`login-log-${new Date().toISOString().slice(0,10)}.csv`, rows, headers);
+            toast.success("تم تصدير سجل الدخول");
+          }} className="text-xs text-primary hover:underline">تصدير</button>
         </div>
         <div className="space-y-2">
           {loginLogs.map((log, i) => (
@@ -3670,10 +3777,56 @@ function SettingsScreen(props: ResetCallbacks) {
   const [tab, setTab] = useState("الشركة");
   const tabs = ["الشركة", "الفواتير", "المدفوعات", "الطابعة", "المخزون", "الأمان", "النسخ الاحتياطي", "إعادة التعيين"];
   const logoRef = useRef<HTMLInputElement>(null);
+  const restoreRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ label: string; fn: () => void } | null>(null);
   const [printerSettings, setPrinterSettings] = useState({ width: "80mm حرارية", copies: "نسخة واحدة", logo: true, qr: true });
   const [inventorySettings, setInventorySettings] = useState({ minStockDefault: "5", unit: "قطعة", autoAlert: true });
+
+  // ── Backup helpers ──────────────────────────────────────────────────────────
+  const BACKUP_HISTORY_KEY = "sowwan_pos_backup_history";
+
+  function getBackupHistory(): string[] {
+    try { return JSON.parse(localStorage.getItem(BACKUP_HISTORY_KEY) || "[]"); } catch { return []; }
+  }
+
+  const [backupHistory, setBackupHistory] = useState<string[]>(getBackupHistory);
+
+  function createBackup() {
+    const data: Record<string, any> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (key.startsWith("sowwan_pos_") && key !== BACKUP_HISTORY_KEY)
+        try { data[key] = JSON.parse(localStorage.getItem(key)!); } catch { data[key] = localStorage.getItem(key); }
+    }
+    const timestamp = new Date().toLocaleString("ar-JO");
+    const blob = new Blob([JSON.stringify({ timestamp, data }, null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob),
+      download: `sowwan-pos-backup-${new Date().toISOString().slice(0,10)}.json`,
+    });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    // Save to history
+    const history = [timestamp, ...getBackupHistory()].slice(0, 10);
+    localStorage.setItem(BACKUP_HISTORY_KEY, JSON.stringify(history));
+    setBackupHistory(history);
+    toast.success("تم إنشاء النسخة الاحتياطية وتنزيلها");
+  }
+
+  function restoreBackup(file: File) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const json = JSON.parse(e.target!.result as string);
+        const data = json.data ?? json;
+        Object.entries(data).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
+        toast.success("تمت الاستعادة — جارٍ إعادة التحميل...");
+        setTimeout(() => window.location.reload(), 1500);
+      } catch { toast.error("ملف النسخة غير صالح"); }
+    };
+    reader.readAsText(file);
+  }
 
   function save() {
     setSaved(true);
@@ -3826,26 +3979,29 @@ function SettingsScreen(props: ResetCallbacks) {
               ))}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => toast.success("جارٍ إنشاء نسخة احتياطية...")} className="flex-1 bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"><Archive size={16} /> نسخة احتياطية الآن</button>
-              <button onClick={() => toast.info("اختر ملف الاستعادة...")} className="flex-1 border border-border text-muted-foreground py-3 rounded-xl font-bold hover:text-foreground transition-all flex items-center justify-center gap-2"><RefreshCw size={16} /> استعادة</button>
+              <button onClick={createBackup} className="flex-1 bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"><Archive size={16} /> نسخة احتياطية الآن</button>
+              <button onClick={() => restoreRef.current?.click()} className="flex-1 border border-border text-muted-foreground py-3 rounded-xl font-bold hover:text-foreground transition-all flex items-center justify-center gap-2"><RefreshCw size={16} /> استعادة</button>
+              <input ref={restoreRef} type="file" accept=".json" className="hidden" onChange={e => { if (e.target.files?.[0]) restoreBackup(e.target.files[0]); e.target.value = ""; }} />
             </div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-6">
             <h3 className="font-bold text-foreground mb-4">سجل النسخ الاحتياطية</h3>
-            <div className="space-y-2">
-              {["5 يوليو 2026 06:00", "4 يوليو 2026 06:00", "3 يوليو 2026 06:00", "2 يوليو 2026 06:00"].map(date => (
-                <div key={date} className="flex items-center justify-between p-3 bg-muted rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <Archive size={14} className="text-emerald-400" />
-                    <span className="text-sm text-foreground">{date}</span>
+            {backupHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">لا توجد نسخ احتياطية بعد — أنشئ أول نسخة الآن</p>
+            ) : (
+              <div className="space-y-2">
+                {backupHistory.map((date, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <Archive size={14} className="text-emerald-400" />
+                      <span className="text-sm text-foreground">{date}</span>
+                      {i === 0 && <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">الأحدث</span>}
+                    </div>
+                    <button onClick={createBackup} className="text-xs text-blue-400 hover:underline flex items-center gap-1"><Download size={12} /> تنزيل</button>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => toast.success("جارٍ تنزيل النسخة...")} className="text-xs text-blue-400 hover:underline flex items-center gap-1"><Download size={12} /> تنزيل</button>
-                    <button onClick={() => toast.info(`استعادة نسخة ${date}`)} className="text-xs text-amber-400 hover:underline flex items-center gap-1"><RefreshCw size={12} /> استعادة</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
