@@ -13,6 +13,7 @@ import { generateSlug, PLATFORM_DOMAIN, storeLoginUrl } from "./types";
 import { StoreUrlCard } from "./StorePortal";
 import { storesApi, usersApi } from "../lib/useApiData";
 import { platformApi } from "../lib/apiClient";
+import { useStores, usePlans, usePlatformUsers, useCreateStore, useDeleteStore, useUpdateStore, useToggleStore, useCreateUser, useDeleteUser } from "../lib/queries";
 
 // Auto-generate store admin username from store name
 function makeUsername(storeName: string, existingUsernames: string[]): string {
@@ -308,8 +309,17 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
   setUsers: (u: AppUser[] | ((p: AppUser[]) => AppUser[])) => void;
   onStoreDeleted?: (id: string) => void;
 }) {
-  const stores = Array.isArray(storesProp) ? storesProp : [];
-  const plans  = Array.isArray(plansProp)  ? plansProp  : [];
+  // Live data from MongoDB — overrides any local state
+  const { data: liveStores } = useStores();
+  const { data: livePlans } = usePlans();
+  const { data: liveUsers } = usePlatformUsers();
+  const deleteStoreMutation = useDeleteStore();
+  const toggleStoreMutation = useToggleStore();
+
+  // Use live MongoDB data when available, fall back to props
+  const stores = Array.isArray(liveStores) ? liveStores : (Array.isArray(storesProp) ? storesProp : []);
+  const plans  = Array.isArray(livePlans)  ? livePlans  : (Array.isArray(plansProp)  ? plansProp  : []);
+  const allUsers = Array.isArray(liveUsers) ? liveUsers : (Array.isArray(users) ? users : []);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlan, setFilterPlan] = useState("all");
@@ -327,35 +337,18 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
   });
 
   function changeStatus(id: string, newStatus: string) {
-    const extra: Partial<TenantStore> = {};
-    if (newStatus === "active") {
-      // Activate: set subscription end to +1 month, clear trial
-      extra.subscriptionStatus = "active";
-      extra.subscriptionEndsAt = new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0];
-      extra.trialEndsAt = undefined;
-    }
-    setStores(prev => prev.map(s => s.id === id ? { ...s, status: newStatus as any, ...extra } : s));
-    storesApi.toggle(id, newStatus).catch(() => {});
-    toast.success(`تم تغيير حالة المتجر إلى: ${newStatus === "active" ? "نشط" : newStatus === "suspended" ? "معلق" : newStatus === "trial" ? "تجريبي" : "غير نشط"}`);
+    toggleStoreMutation.mutate({ id, status: newStatus }, {
+      onSuccess: () => toast.success(`تم تغيير حالة المتجر`),
+      onError: () => toast.error("فشل تغيير الحالة"),
+    });
   }
 
-  async function deleteStore(id: string) {
-    const store = stores.find(s => s.id === id);
-    // Mark as deleted — prevents sync from re-adding
-    onStoreDeleted?.(id);
-    // Remove from local state immediately
-    setStores(prev => prev.filter(s => s.id !== id));
-    if (store?.slug) setUsers(prev => prev.filter(u => u.storeSlug !== store.slug));
+  function deleteStore(id: string) {
     setDeleteId(null);
-    // Delete from MongoDB
-    const demoIds = new Set(["s1","s2","s3","s4","s5"]);
-    if (!demoIds.has(id)) {
-      const r = await storesApi.delete(id).catch(() => ({ ok: false }));
-      if (!r.ok) toast.error("تم الحذف محلياً لكن فشل الحذف من السيرفر — سيرجع بعد المزامنة");
-      else toast.success("تم حذف المتجر نهائياً");
-    } else {
-      toast.success("تم حذف المتجر التجريبي");
-    }
+    deleteStoreMutation.mutate(id, {
+      onSuccess: () => toast.success("تم حذف المتجر نهائياً من قاعدة البيانات"),
+      onError: (e: any) => toast.error(`فشل الحذف: ${e.message}`),
+    });
   }
 
   async function saveStore(data: Partial<TenantStore>) {
@@ -633,7 +626,7 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
       {viewCredsStore && (
         <StoreCredsModal
           store={viewCredsStore}
-          users={Array.isArray(users) ? users.filter(u => u.storeSlug === viewCredsStore.slug && u.role !== "مالك المنصة") : []}
+          users={allUsers.filter(u => u.storeSlug === viewCredsStore.slug && u.role !== "مالك المنصة")}
           onUpdateUser={updated => setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))}
           onAddUser={newUser => setUsers(prev => [...prev, newUser])}
           onClose={() => setViewCredsStore(null)}
