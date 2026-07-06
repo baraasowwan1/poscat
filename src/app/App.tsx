@@ -560,9 +560,10 @@ function TopBar({ title, screen, onSearch, notifCount, currentUser, onLogout, on
   const [q, setQ] = useState("");
   const [showNotif, setShowNotif] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [dismissedAt, setDismissedAt] = useState<number>(0); // timestamp of last "mark all read"
 
   // Build real notifications from actual data
-  const notifications = (() => {
+  const allNotifications = (() => {
     const items: { text: string; time: string; color: string }[] = [];
     // Out of stock products
     products.filter(p => p.stock === 0).slice(0, 3).forEach(p => {
@@ -581,12 +582,12 @@ function TopBar({ title, screen, onSearch, notifCount, currentUser, onLogout, on
     sales.filter(s => s.status === "مكتمل").slice(0, 2).forEach(s => {
       items.push({ text: `تم البيع ${s.id} — ${fmtCurrency(s.amount)}`, time: s.time || s.date, color: "bg-emerald-500" });
     });
-    // No notifications case
-    if (items.length === 0) {
-      items.push({ text: "لا توجد إشعارات جديدة", time: "", color: "bg-muted-foreground" });
-    }
     return items.slice(0, 6);
   })();
+
+  // Filter out dismissed notifications (those that existed before last "mark all read")
+  const notifications = dismissedAt > 0 ? [] : allNotifications;
+  const unreadCount = notifications.length === 1 && notifications[0]?.color === "bg-muted-foreground" ? 0 : notifications.length;
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -629,26 +630,34 @@ function TopBar({ title, screen, onSearch, notifCount, currentUser, onLogout, on
         <button onClick={() => { setShowNotif(!showNotif); setShowProfile(false); }}
           className="relative p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
           <Bell size={18} />
-          {notifCount > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-white flex items-center justify-center font-bold" style={{ fontSize: 10 }}>{notifCount}</span>}
+          {unreadCount > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-white flex items-center justify-center font-bold" style={{ fontSize: 10 }}>{unreadCount}</span>}
         </button>
         {showNotif && (
           <div className="absolute top-12 left-0 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <span className="font-bold text-foreground text-sm">الإشعارات</span>
+              <span className="font-bold text-foreground text-sm">الإشعارات {unreadCount > 0 && <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full mr-1">{unreadCount}</span>}</span>
               <button onClick={() => setShowNotif(false)} className="text-muted-foreground hover:text-foreground p-1"><X size={14} /></button>
             </div>
-            {notifications.map((n, i) => (
-              <div key={i} className="px-4 py-3 border-b border-border hover:bg-muted/30 transition-all cursor-pointer flex items-start gap-3">
+            {notifications.length === 0 ? (
+              <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+                <CheckCircle2 size={24} className="mx-auto mb-2 text-emerald-400" />
+                لا توجد إشعارات غير مقروءة
+              </div>
+            ) : notifications.map((n, i) => (
+              <div key={i} className="px-4 py-3 border-b border-border hover:bg-muted/30 transition-all flex items-start gap-3">
                 <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.color}`} />
-                <div>
+                <div className="flex-1">
                   <p className="text-sm text-foreground">{n.text}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{n.time}</p>
+                  {n.time && <p className="text-xs text-muted-foreground mt-0.5">{n.time}</p>}
                 </div>
               </div>
             ))}
-            <button onClick={() => setShowNotif(false)} className="w-full py-3 text-sm text-primary text-center hover:bg-muted/30 transition-all font-medium">
-              تحديد الكل كمقروء
-            </button>
+            {unreadCount > 0 && (
+              <button onClick={() => { setDismissedAt(Date.now()); setShowNotif(false); }}
+                className="w-full py-3 text-sm text-primary text-center hover:bg-muted/30 transition-all font-semibold border-t border-border flex items-center justify-center gap-2">
+                <CheckCircle2 size={14} /> تحديد الكل كمقروء
+              </button>
+            )}
           </div>
         )}
       </div>
