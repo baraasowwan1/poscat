@@ -455,9 +455,11 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
         adminUsername: username,
         adminPassword: password,
       });
-      if (r && (r._id || r.storeId)) {
-        const finalUsername = r.adminUsername || username; // use actual created username
-        const savedStore = { ...newStore, id: r._id || r.storeId };
+      // r = full response: { success, data: store, adminCreated, adminUsername, adminError }
+      const store = r.data || r;
+      if (store && (store._id || store.storeId)) {
+        const finalUsername = r.adminUsername || username;
+        const savedStore = { ...newStore, id: store._id || store.storeId };
         const savedUser = { ...adminUser, username: finalUsername };
         setStores(prev => [savedStore, ...prev]);
         setUsers(prev => [...prev, savedUser]);
