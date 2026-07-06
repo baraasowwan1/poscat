@@ -341,7 +341,9 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
     const store = stores.find(s => s.id === id);
     setStores(prev => prev.filter(s => s.id !== id));
     if (store?.slug) setUsers(prev => prev.filter(u => u.storeSlug !== store.slug));
-    storesApi.delete(id).catch(() => {});
+    // Only try MongoDB delete for real stores (not demo stores with ids s1-s5)
+    const demoIds = new Set(["s1","s2","s3","s4","s5"]);
+    if (!demoIds.has(id)) storesApi.delete(id).catch(() => {});
     setDeleteId(null);
     toast.success("تم حذف المتجر ومستخدميه");
   }
@@ -392,12 +394,17 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
     setNewCredentials({ storeName: data.name ?? "", username, password });
     setShowModal(false); setEditStore(null);
 
-    // Sync to MongoDB in background
+    // Sync to MongoDB in background — update id to MongoDB _id on success
     storesApi.create(newStore).then(r => {
       if (r.ok && r.data?._id) {
         setStores(prev => prev.map(s => s.id === newStore.id ? { ...s, id: r.data._id } : s));
+        toast.info(`✅ المتجر "${newStore.name}" حُفظ في قاعدة البيانات`);
+      } else {
+        toast.error(`⚠ المتجر موجود محلياً فقط — تأكد من الاتصال بالسيرفر`);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      toast.error(`⚠ المتجر موجود محلياً فقط — تأكد من الاتصال بالسيرفر`);
+    });
     usersApi.create({ ...adminUser, password }).catch(() => {});
   }
 
