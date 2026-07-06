@@ -3259,6 +3259,22 @@ export default function App({
           </button>
         </div>
       )}
+      {/* Trial expiry warning banner */}
+      {!impersonatingStore && (() => {
+        const activeStore = tenantStores.find(s => s.slug === activeStoreSlug);
+        if (!activeStore || activeStore.status !== "trial" || !activeStore.trialEndsAt) return null;
+        const daysLeft = Math.ceil((new Date(activeStore.trialEndsAt).getTime() - Date.now()) / 864e5);
+        if (daysLeft > 7) return null;
+        return (
+          <div className={`fixed top-0 right-0 left-0 z-[190] flex items-center justify-center px-6 py-2 text-sm font-bold shadow-lg ${daysLeft <= 0 ? "bg-red-600 text-white" : "bg-amber-400 text-black"}`}>
+            <AlertCircle size={15} className="ml-2" />
+            {daysLeft <= 0
+              ? "⚠ انتهت فترة التجربة المجانية — يرجى التواصل مع الإدارة لتفعيل الاشتراك"
+              : `⏳ تنتهي فترة التجربة المجانية بعد ${daysLeft} ${daysLeft === 1 ? "يوم" : "أيام"} — تواصل مع الإدارة للتفعيل`
+            }
+          </div>
+        );
+      })()}
       <div className={`flex flex-1 overflow-hidden ${impersonatingStore ? "mt-10" : ""}`}>
         <Sidebar screen={screen} setScreen={guardedSetScreen} collapsed={collapsed} setCollapsed={setCollapsed} isDark={isDark} toggleTheme={() => setIsDark(!isDark)} onLogout={handleLogout} currentUser={currentUser!} company={company} companyLogo={companyLogo} fullAccess={isPlatformUser && isImpersonating} />
         <div className="flex-1 flex flex-col overflow-hidden" style={{ marginRight: sw, transition: "margin-right 0.3s" }}>
