@@ -3254,13 +3254,12 @@ export default function App({
   // ── Core sync function — fetches all platform data from MongoDB ────────────
   const [isSyncing, setIsSyncing] = useState(false);
 
-  async function syncFromMongoDB(forceUser?: AppUser) {
+  async function syncFromMongoDB(forceUser?: AppUser, showErrors = true) {
     const user = forceUser ?? currentUser;
     if (!user || user.role !== "مالك المنصة") return;
 
     let token = localStorage.getItem("pos_token");
     if (!token) {
-      // Try credentials stored in sessionStorage (set during this session's login)
       const storedCreds = sessionStorage.getItem("sowwan_admin_creds");
       if (storedCreds) {
         try {
@@ -3280,7 +3279,8 @@ export default function App({
     }
 
     if (!token) {
-      toast.error("لا يوجد اتصال بالسيرفر — يرجى تسجيل الخروج وإعادة الدخول للمزامنة");
+      // Only show error when user explicitly clicks sync, not on auto-mount
+      if (showErrors) toast.error("لا يوجد اتصال بالسيرفر — يرجى تسجيل الخروج وإعادة الدخول للمزامنة");
       return;
     }
 
@@ -3345,7 +3345,7 @@ export default function App({
 
   useEffect(() => {
     const savedUser = _initSession.user;
-    if (savedUser?.role === "مالك المنصة") syncFromMongoDB(savedUser);
+    if (savedUser?.role === "مالك المنصة") syncFromMongoDB(savedUser, false); // silent on mount
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Real audit log helper ─────────────────────────────────────────────────
