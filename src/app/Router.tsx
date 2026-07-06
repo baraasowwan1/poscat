@@ -81,10 +81,20 @@ function StoreRoute({ stores, users }: { stores: TenantStore[]; users: AppUser[]
       .finally(() => setApiLoading(false));
   }, [storeSlug, BASE]);
 
-  // Use API store if available, fall back to local stores
-  const store = apiStore || stores.find(s => s.slug === storeSlug);
+  // Use API store if available, fall back to local stores, or build minimal store from slug
+  const store = apiStore || stores.find(s => s.slug === storeSlug) || (storeSlug ? {
+    id: storeSlug, storeId: storeSlug, slug: storeSlug, name: storeSlug,
+    sector: "supermarket", status: "active" as const, subscriptionStatus: "active",
+    customDomain: "", ownerName: "", phone: "", email: "", address: "", logo: "", taxNumber: "",
+    currency: "JOD", timezone: "Asia/Amman", planId: "starter",
+    maxUsers: 999, maxProducts: 999999, maxBranches: 999,
+    usersCount: 0, productsCount: 0, branchesCount: 0, totalSales: 0,
+    createdAt: "", updatedAt: "",
+  } : null);
 
-  if (apiLoading && !store) return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",color:"#888"}}>جاري التحميل...</div>;
+  if (apiLoading && !apiStore && !stores.find(s => s.slug === storeSlug)) {
+    return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",color:"#888"}}>جاري التحميل...</div>;
+  }
   if (!store) return <Store404Page slug={storeSlug ?? ""} />;
 
   if (store.status === "suspended" || store.subscriptionStatus === "expired") {
