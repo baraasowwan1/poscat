@@ -856,25 +856,49 @@ function StoreCredsModal({ store, users, onUpdateUser, onAddUser, onClose }: {
 
   async function createUser() {
     if (!createForm.username || !createForm.password) { toast.error("اسم المستخدم وكلمة المرور مطلوبان"); return; }
+    if (createForm.password.length < 6) { toast.error("كلمة المرور 6 أحرف على الأقل"); return; }
     setCreating(true);
     try {
       const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
       const token = localStorage.getItem("pos_token");
+      // Use unique email to avoid conflicts
+      const uniqueEmail = `${createForm.username}_${store.slug}@pos.local`;
       const r = await fetch(`${BASE}/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ name: createForm.name || createForm.username, email: `${createForm.username}@${store.slug}.pos`, username: createForm.username, password: createForm.password, role: createForm.role, storeSlug: store.slug, permissions: 8 }),
+        body: JSON.stringify({
+          name: createForm.name || createForm.username,
+          email: uniqueEmail,
+          username: createForm.username,
+          password: createForm.password,
+          role: createForm.role,
+          storeSlug: store.slug,
+          permissions: 8,
+        }),
         signal: AbortSignal.timeout(10000),
       });
       const d = await r.json();
       if (r.ok) {
-        const newUser = { id: d.data?._id || Date.now(), name: createForm.name || createForm.username, email: `${createForm.username}@${store.slug}.pos`, username: createForm.username, role: createForm.role, status: "نشط", lastLogin: "", permissions: 8, password: createForm.password, storeSlug: store.slug };
+        const newUser = {
+          id: d.data?._id || Date.now(),
+          name: createForm.name || createForm.username,
+          email: uniqueEmail,
+          username: createForm.username,
+          role: createForm.role,
+          status: "نشط", lastLogin: "", permissions: 8,
+          password: createForm.password, // show password in modal
+          storeSlug: store.slug,
+        };
         onAddUser?.(newUser);
-        toast.success(`✅ تم إنشاء المستخدم "${createForm.username}" وحفظه في السيرفر`);
+        toast.success(`✅ المستخدم "${createForm.username}" / كلمة المرور: ${createForm.password} — احتفظ بها!`);
         setShowCreate(false);
-        setCreateForm({ name: store.ownerName || "", username: store.slug?.replace(/-/g,"").slice(0,10) || "admin", password: "", role: "مدير النظام" });
+        setCreateForm({ name: store.ownerName || "", username: "", password: "", role: "مدير النظام" });
       } else {
-        toast.error(d.message || "فشل إنشاء المستخدم");
+        // If duplicate username, suggest different name
+        const isDuplicate = d.message?.includes("duplicate") || d.message?.includes("E11000");
+        toast.error(isDuplicate
+          ? `اسم المستخدم "${createForm.username}" مستخدم — جرّب اسماً آخر`
+          : (d.message || "فشل إنشاء المستخدم"));
       }
     } catch { toast.error("لا يوجد اتصال بالسيرفر"); }
     setCreating(false);
@@ -1015,13 +1039,21 @@ function StoreCredsModal({ store, users, onUpdateUser, onAddUser, onClose }: {
                       className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-bold transition-all border border-blue-500/15">
                       <Edit2 size={11} /> تعديل
                     </button>
-                    <button onClick={() => {
-                      usersApi.create({ ...u, password: u.password }).then(r => {
-                        if (r.ok) toast.success(`✅ تم حفظ "${u.username}" في السيرفر`);
-                        else toast.error(`فشل: ${r.error || "خطأ غير معروف"}`);
-                      }).catch(() => toast.error("لا يوجد اتصال بالسيرفر"));
-                    }} className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all border border-emerald-500/15">
-                      <RefreshCw size={11} /> حفظ في السيرفر
+                    <button onClick={async () => {
+                      const newPw = window.prompt(`إعادة تعيين كلمة مرور "${u.username}" — أدخل كلمة مرور جديدة (6 أحرف+):`);
+                      if (!newPw || newPw.length < 6) { if (newPw) toast.error("كلمة المرور قصيرة جداً"); return; }
+                      const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+                      const token = localStorage.getItem("pos_token");
+                      const r = await fetch(`${BASE}/users/${u.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                        body: JSON.stringify({ password: newPw }),
+                        signal: AbortSignal.timeout(10000),
+                      }).catch(() => null);
+                      if (r?.ok) toast.success(`✅ كلمة مرور "${u.username}" الجديدة: ${newPw} — احتفظ بها!`);
+                      else toast.error("فشل تعيين كلمة المرور — تأكد من الاتصال");
+                    }} className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-bold transition-all border border-amber-500/15">
+                      <Key size={11} /> إعادة تعيين كلمة المرور
                     </button>
                   </div>
                 </div>
