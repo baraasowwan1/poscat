@@ -66,17 +66,35 @@ function mapCategory(tags: string[] = []): string {
   return "مواد غذائية";
 }
 
+// Validate an image URL — must be absolute HTTPS and non-empty
+function validImg(url?: string): string {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("http")) return "";
+  return trimmed;
+}
+
+// Best display name: prefer Arabic, fall back to English, then generic
+function bestName(raw: any): { nameAr: string; nameEn: string } {
+  const ar = (raw.product_name_ar || "").trim();
+  const en = (raw.product_name_en || raw.product_name || "").trim();
+  return { nameAr: ar || en, nameEn: en || ar };
+}
+
 // ─── Parse raw OFF product object (works for v2 and v3) ──────────────────────
-function parseProduct(raw: any, barcode: string): OFFProduct {
+function parseProduct(raw: any, barcode: string): OFFProduct | null {
+  const { nameAr, nameEn } = bestName(raw);
+  // Skip products with no usable name
+  if (!nameAr && !nameEn) return null;
   return {
-    barcode:     raw.code ?? barcode,
-    nameAr:      raw.product_name_ar || raw.product_name || raw.product_name_en || "",
-    nameEn:      raw.product_name_en || raw.product_name || "",
-    brand:       raw.brands || "",
+    barcode:     (raw.code ?? barcode).trim(),
+    nameAr,
+    nameEn,
+    brand:       (raw.brands || "").split(",")[0].trim(), // first brand only
     category:    mapCategory(raw.categories_tags),
-    image:       raw.image_front_url || raw.image_url || "",
+    image:       validImg(raw.image_front_url) || validImg(raw.image_url) || "",
     quantity:    raw.quantity || "",
-    ingredients: raw.ingredients_text_ar || raw.ingredients_text || "",
+    ingredients: (raw.ingredients_text_ar || raw.ingredients_text || "").slice(0, 200),
   };
 }
 
@@ -84,14 +102,13 @@ function parseProduct(raw: any, barcode: string): OFFProduct {
 // Rate limit: 15 req/min
 export async function fetchByBarcode(barcode: string): Promise<OFFProduct | null> {
   try {
-    const fields = "code,product_name,product_name_ar,product_name_en,brands,categories_tags,image_front_url,quantity,ingredients_text_ar,ingredients_text";
+    const fields = "code,product_name,product_name_ar,product_name_en,brands,categories_tags,image_front_url,image_url,quantity,ingredients_text_ar,ingredients_text";
     const res = await fetch(
       `${BASE_V3}/product/${encodeURIComponent(barcode)}.json?fields=${fields}`,
-      { headers: HEADERS }
+      { headers: HEADERS, signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return null;
     const data = await res.json();
-    // v3 uses status: "success" | "product_not_found" (string, unlike v2 which used 0/1)
     if (data.status !== "success" || !data.product) return null;
     return parseProduct(data.product, barcode);
   } catch {
@@ -121,8 +138,8 @@ export async function searchByName(query: string, pageSize = 8): Promise<OFFProd
     const data = await res.json();
     const products: any[] = data.products ?? [];
     return products
-      .filter(p => p.product_name || p.product_name_ar)
-      .map(p => parseProduct(p, p.code ?? ""));
+      .map(p => parseProduct(p, p.code ?? ""))
+      .filter((p): p is OFFProduct => p !== null);
   } catch {
     return [];
   }
@@ -141,7 +158,7 @@ export async function fetchMultipleBarcodes(barcodes: string[]): Promise<OFFProd
     const res = await fetch(`${BASE_V2}/search?${params}`, { headers: HEADERS });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.products ?? []).map((p: any) => parseProduct(p, p.code ?? ""));
+    return (data.products ?? []).map((p: any) => parseProduct(p, p.code ?? "")).filter((p): p is OFFProduct => p !== null);
   } catch {
     return [];
   }
