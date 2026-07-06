@@ -155,6 +155,9 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
   const [lastInvoiceId, setLastInvoiceId] = useState("");
   const [heldOrders, setHeldOrders] = useState<CartItem[][]>([]);
   const [gridSize, setGridSize] = useState(3);
+  const [showRefund, setShowRefund] = useState(false);
+  const [refundBarcode, setRefundBarcode] = useState("");
+  const [refundQty, setRefundQty] = useState(1);
   const [scanStatus, setScanStatus] = useState<"idle"|"scanning"|"found"|"notfound">("idle");
 
   // ── Cash Drawer (Web Serial API) ──────────────────────────────────────────
@@ -676,11 +679,58 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
           </button>
           <div className="flex gap-2">
             <button onClick={holdOrder} className="flex-1 py-2 border border-border rounded-xl text-xs text-muted-foreground hover:text-amber-400 hover:border-amber-500/50 transition-all flex items-center justify-center gap-1.5"><Archive size={13} /> تعليق</button>
-            <button onClick={() => toast.info("وضع الاسترجاع")} className="flex-1 py-2 border border-border rounded-xl text-xs text-muted-foreground hover:text-blue-400 hover:border-blue-500/50 transition-all flex items-center justify-center gap-1.5"><Repeat size={13} /> استرجاع</button>
+            <button onClick={() => setShowRefund(true)} className="flex-1 py-2 border border-border rounded-xl text-xs text-muted-foreground hover:text-blue-400 hover:border-blue-500/50 transition-all flex items-center justify-center gap-1.5"><Repeat size={13} /> استرجاع</button>
             <button onClick={() => { setCart([]); setCashGiven(""); setSelectedCustomer(""); }} className="flex-1 py-2 border border-border rounded-xl text-xs text-muted-foreground hover:text-red-400 hover:border-red-500/50 transition-all flex items-center justify-center gap-1.5"><X size={13} /> إلغاء</button>
           </div>
         </div>
       </div>
+
+      {/* Refund Modal */}
+      {showRefund && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-black text-foreground text-lg flex items-center gap-2"><Repeat size={18} className="text-blue-400" /> استرجاع منتج</h3>
+              <button onClick={() => setShowRefund(false)} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">الباركود أو اسم المنتج</label>
+                <input value={refundBarcode} onChange={e => setRefundBarcode(e.target.value)}
+                  placeholder="امسح الباركود أو اكتب الاسم..."
+                  className="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">الكمية المسترجعة</label>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setRefundQty(q => Math.max(1, q - 1))} className="w-10 h-10 bg-muted rounded-xl flex items-center justify-center hover:bg-muted/70"><Minus size={16} /></button>
+                  <span className="text-xl font-black text-foreground flex-1 text-center">{refundQty}</span>
+                  <button onClick={() => setRefundQty(q => q + 1)} className="w-10 h-10 bg-muted rounded-xl flex items-center justify-center hover:bg-muted/70"><Plus size={16} /></button>
+                </div>
+              </div>
+              {(() => {
+                const p = products.find(x => x.barcode === refundBarcode.trim() || x.nameAr.includes(refundBarcode.trim()));
+                if (!refundBarcode.trim()) return null;
+                if (!p) return <p className="text-sm text-red-400 bg-red-500/10 rounded-xl px-3 py-2">المنتج غير موجود في النظام</p>;
+                const refundAmount = p.price * refundQty;
+                return (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 space-y-1">
+                    <p className="text-sm font-bold text-foreground">{p.nameAr}</p>
+                    <p className="text-xs text-muted-foreground">{refundQty} × {fmtCurrency(p.price)}</p>
+                    <p className="text-lg font-black text-blue-400">استرجاع: {fmtCurrency(refundAmount)}</p>
+                    <button onClick={() => {
+                      toast.success(`تم تسجيل استرجاع ${refundQty} قطعة من "${p.nameAr}" — ${fmtCurrency(refundAmount)}`);
+                      setShowRefund(false); setRefundBarcode(""); setRefundQty(1);
+                    }} className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2">
+                      <Check size={16} /> تأكيد الاسترجاع
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment Modal */}
       {paymentStep && (
