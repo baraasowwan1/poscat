@@ -400,20 +400,25 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
 
     setShowModal(false); setEditStore(null);
 
-    // Create store + admin user in one transaction via backend
+    // Create store + admin user via backend API
     try {
       const r = await platformApi.createStore({
         ...newStore,
+        slug: newStore.slug,
         adminUsername: username,
         adminPassword: password,
       });
-      if (r && r._id) {
-        const savedStore = { ...newStore, id: r._id };
-        const savedUser = { ...adminUser, id: r._id + "_user" };
+      if (r && (r._id || r.storeId)) {
+        const savedStore = { ...newStore, id: r._id || r.storeId };
+        const savedUser = { ...adminUser };
         setStores(prev => [savedStore, ...prev]);
         setUsers(prev => [...prev, savedUser]);
         setNewCredentials({ storeName: data.name ?? "", username, password });
-        toast.success(`✅ تم إنشاء المتجر "${newStore.name}" وحفظه في قاعدة البيانات`);
+        if (r.adminCreated) {
+          toast.success(`✅ تم إنشاء المتجر والمستخدم "${username}" وحفظهم في السيرفر`);
+        } else {
+          toast.warning(`⚠ تم إنشاء المتجر لكن فشل إنشاء المستخدم — استخدم "إضافة مستخدم جديد" في بيانات الدخول`);
+        }
       }
     } catch (err: any) {
       toast.error(`فشل إنشاء المتجر: ${err.message || "تأكد من الاتصال بالسيرفر"}`);
