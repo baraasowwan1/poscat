@@ -929,6 +929,19 @@ function StoreCredsModal({ store, users, onUpdateUser, onAddUser, onClose }: {
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={20} /></button>
         </div>
 
+        {/* Store login URL — copy and send to customer */}
+        <div className="px-5 pt-4 pb-2">
+          <p className="text-[10px] text-muted-foreground mb-1">رابط دخول المتجر (أرسله للعميل)</p>
+          <div className="flex items-center gap-2 bg-blue-500/8 border border-blue-500/20 rounded-xl px-3 py-2">
+            <p className="text-xs font-mono text-blue-300 flex-1 truncate dir-ltr" dir="ltr">
+              {window.location.origin}/#/{store.slug}/login
+            </p>
+            <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/#/${store.slug}/login`).then(() => toast.success("تم نسخ الرابط")).catch(() => toast.info(`${window.location.origin}/#/${store.slug}/login`)); }} className="text-blue-400 hover:text-blue-300 shrink-0">
+              <Copy size={13} />
+            </button>
+          </div>
+        </div>
+
         <div className="overflow-y-auto flex-1 p-5 space-y-3">
           {/* Create user form */}
           {showCreate && (
