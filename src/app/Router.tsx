@@ -14,8 +14,19 @@ import React, { useState, useEffect } from "react";
 import {
   HashRouter, Routes, Route, Navigate, useParams, useNavigate,
 } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { Store404Page, StoreSuspendedPage, StoreLoginPage } from "./StorePortal";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: true,  // refresh when user comes back to tab
+      staleTime: 10_000,           // data fresh for 10s
+    },
+  },
+});
 import type { TenantStore, AppUser, Plan, AuditLog } from "./types";
 import { generateSlug } from "./types";
 
@@ -42,9 +53,38 @@ function StoreRoute({ stores, users }: { stores: TenantStore[]; users: AppUser[]
   const { storeSlug, "*": splat } = useParams<{ storeSlug: string; "*": string }>();
   const navigate = useNavigate();
   const [loggedInUser, setLoggedInUser] = useState<AppUser | null>(null);
+  const [apiStore, setApiStore] = useState<TenantStore | null>(null);
+  const [apiLoading, setApiLoading] = useState(true);
+  const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
-  const store = stores.find(s => s.slug === storeSlug);
+  // Fetch store from MongoDB directly — works from ANY browser without localStorage
+  useEffect(() => {
+    if (!storeSlug) return;
+    fetch(`${BASE}/auth/store-check/${storeSlug}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.data) {
+          // Build minimal store object from API response
+          setApiStore({
+            id: storeSlug, storeId: storeSlug, name: d.data.name || storeSlug,
+            slug: storeSlug, customDomain: "", sector: d.data.sector || "supermarket",
+            ownerName: "", phone: "", email: "", address: "", logo: "", taxNumber: "",
+            currency: "JOD", timezone: "Asia/Amman", planId: "starter",
+            status: d.data.status || "active", subscriptionStatus: "active",
+            maxUsers: 999, maxProducts: 999999, maxBranches: 999,
+            usersCount: 0, productsCount: 0, branchesCount: 0, totalSales: 0,
+            createdAt: "", updatedAt: "",
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setApiLoading(false));
+  }, [storeSlug, BASE]);
 
+  // Use API store if available, fall back to local stores
+  const store = apiStore || stores.find(s => s.slug === storeSlug);
+
+  if (apiLoading && !store) return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",color:"#888"}}>جاري التحميل...</div>;
   if (!store) return <Store404Page slug={storeSlug ?? ""} />;
 
   if (store.status === "suspended" || store.subscriptionStatus === "expired") {
@@ -182,33 +222,30 @@ export default function AppRouter() {
   const [platformUser, setPlatformUser] = useState<AppUser | null>(null);
 
   return (
-    <HashRouter>
-      <Routes>
-        {/* Root → redirect to platform login */}
-        <Route path="/" element={<Navigate to="/platform/login" replace />} />
+    <QueryClientProvider client={queryClient}>
+      <HashRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/platform/login" replace />} />
 
-        {/* Platform login */}
-        <Route path="/platform/login" element={
-          platformUser
-            ? <Navigate to="/platform/dashboard" replace />
-            : <PlatformLoginPage users={users} onLogin={setPlatformUser} />
-        } />
+          <Route path="/platform/login" element={
+            platformUser
+              ? <Navigate to="/platform/dashboard" replace />
+              : <PlatformLoginPage users={users} onLogin={setPlatformUser} />
+          } />
 
-        {/* Platform dashboard (passes through to App which renders platform panel) */}
-        <Route path="/platform/*" element={
-          platformUser
-            ? <App initialPlatformUser={platformUser} stores={stores} setStores={setStores} onPlatformLogout={() => setPlatformUser(null)} />
-            : <Navigate to="/platform/login" replace />
-        } />
+          <Route path="/platform/*" element={
+            platformUser
+              ? <App initialPlatformUser={platformUser} stores={stores} setStores={setStores} onPlatformLogout={() => setPlatformUser(null)} />
+              : <Navigate to="/platform/login" replace />
+          } />
 
-        {/* Store slug routes */}
-        <Route path="/:storeSlug/*" element={
-          <StoreRoute stores={stores} users={users} />
-        } />
+          <Route path="/:storeSlug/*" element={
+            <StoreRoute stores={stores} users={users} />
+          } />
 
-        {/* Global 404 */}
-        <Route path="*" element={<Store404Page slug="(رابط غير معروف)" />} />
-      </Routes>
-    </HashRouter>
+          <Route path="*" element={<Store404Page slug="(رابط غير معروف)" />} />
+        </Routes>
+      </HashRouter>
+    </QueryClientProvider>
   );
 }
