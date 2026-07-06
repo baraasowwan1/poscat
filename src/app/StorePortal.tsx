@@ -158,9 +158,18 @@ export function StoreLoginPage({
   // Strict store isolation: only users whose storeSlug matches this store
   const storeUsers = users.filter(u => u.storeSlug === store.slug && u.role !== "مالك المنصة");
 
+  // Check if trial expired
+  const trialExpired = store.status === "trial" && store.trialEndsAt
+    ? new Date(store.trialEndsAt).getTime() < Date.now()
+    : false;
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    // Block suspended stores
+    if (store.status === "suspended") { setError("هذا المتجر معلق — يرجى التواصل مع الإدارة"); return; }
+    // Block expired trials
+    if (trialExpired) { setError("انتهت فترة التجربة المجانية — يرجى التواصل مع الإدارة لتفعيل الاشتراك"); return; }
     if (!credential || !password) { setError("يرجى إدخال اسم المستخدم وكلمة المرور"); return; }
     const cred = credential.trim().toLowerCase();
     const found = storeUsers.find(u =>
