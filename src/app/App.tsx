@@ -21,6 +21,8 @@ import { apiLogin, apiLogout, storesApi, usersApi } from "../lib/useApiData";
 import { SectorProvider, useSector } from "./SectorContext";
 import { getSectorConfig } from "./sectorConfig";
 import { fetchByBarcode, searchByName, type OFFProduct } from "../lib/openFoodFacts";
+import { useStoreSync } from "../lib/useStoreSync";
+import { productsDb, customersDb, suppliersDb, salesDb, purchasesDb, expensesDb, toApiProduct, toApiCustomer, toApiSupplier, toApiSale, toApiExpense, mapProduct, mapCustomer, mapSupplier, mapSale, mapPurchase, mapExpense } from "../lib/dbSync";
 import {
   PlatformSidebar, PlatformTopBar,
   PlatformDashboardScreen, PlatformStoresScreen, PlatformUsersScreen,
@@ -143,7 +145,7 @@ const GOLD_LIGHT = "#E2C98A";
 const GOLD_DIM = "rgba(200,169,110,0.15)";
 
 function LoginScreen({ onLogin, users, stores }: {
-  onLogin: (user: AppUser) => void;
+  onLogin: (user: AppUser, rawPassword?: string) => void;
   users: AppUser[];
   stores: TenantStore[];
 }) {
@@ -177,7 +179,7 @@ function LoginScreen({ onLogin, users, stores }: {
           permissions: result.user.permissions ?? 8,
           password: "", storeSlug: result.user.storeSlug || "",
         };
-        onLogin(apiUser);
+        onLogin(apiUser, password);
         return;
       }
       // API returned error (wrong password, suspended, etc.)
@@ -209,7 +211,7 @@ function LoginScreen({ onLogin, users, stores }: {
       setError({ msg: "هذا الحساب معطّل. تواصل مع مدير المتجر.", type: "inactive" }); return;
     }
     setLoading(false);
-    onLogin(found);
+    onLogin(found, password);
   }
 
   return (
@@ -1011,7 +1013,7 @@ function OFFImportModal({ onImport, onClose }: {
 }
 
 // ─── Products Screen ──────────────────────────────────────────────────────────
-function ProductsScreen({ products, setProducts }: { products: Product[]; setProducts: (u: Product[] | ((p: Product[]) => Product[])) => void }) {
+function ProductsScreen({ products, setProducts, onSync }: { products: Product[]; setProducts: (u: Product[] | ((p: Product[]) => Product[])) => void; onSync?: (action: "add"|"update"|"delete", item: any, prevId?: any) => void }) {
   const { config: sectorCfg } = useSector();
   const PRODUCT_CATS = sectorCfg.categories;
   const [search, setSearch] = useState("");
@@ -1062,18 +1064,27 @@ function ProductsScreen({ products, setProducts }: { products: Product[]; setPro
     const stockNum = Number(form.stock);
     const derived = { ...form, price: Number(form.price), cost: Number(form.cost), stock: stockNum, minStock: Number(form.minStock), name: form.nameAr, status: stockNum === 0 ? "نفد المخزون" : "نشط" };
     if (editProduct) {
-      setProducts(prev => prev.map(p => p.id === editProduct.id ? { ...p, ...derived } : p));
+      const updated = { ...editProduct, ...derived };
+      setProducts(prev => prev.map(p => p.id === editProduct.id ? updated : p));
+      onSync?.("update", updated, editProduct.id);
       toast.success("تم تعديل المنتج بنجاح");
     } else {
       const newP: Product = { id: uid(), ...derived };
       setProducts(prev => [newP, ...prev]);
+      onSync?.("add", newP);
       toast.success("تمت إضافة المنتج — سيظهر في نقطة البيع فوراً");
     }
     setShowAdd(false);
   }
-  function deleteProduct(id: number) { setProducts(prev => prev.filter(p => p.id !== id)); toast.success("تم حذف المنتج"); }
+  function deleteProduct(id: number) {
+    const p = products.find(x => x.id === id);
+    setProducts(prev => prev.filter(p => p.id !== id));
+    onSync?.("delete", p, id);
+    toast.success("تم حذف المنتج");
+  }
   function deleteSelected() {
     if (!selected.length) return;
+    selected.forEach(id => { const p = products.find(x => x.id === id); onSync?.("delete", p, id); });
     setProducts(prev => prev.filter(p => !selected.includes(p.id)));
     setSelected([]);
     toast.success(`تم حذف ${selected.length} منتجات`);
@@ -1691,7 +1702,7 @@ function SalesScreen({ sales, setSales, company, companyLogo }: { sales: Sale[];
 }
 
 // ─── Customers Screen ─────────────────────────────────────────────────────────
-function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; setCustomers: (u: Customer[] | ((p: Customer[]) => Customer[])) => void }) {
+function CustomersScreen({ customers, setCustomers, onSync }: { customers: Customer[]; setCustomers: (u: Customer[] | ((p: Customer[]) => Customer[])) => void; onSync?: (action: "add"|"update"|"delete", item: any, prevId?: any) => void }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [viewC, setViewC] = useState<Customer | null>(null);
@@ -1704,6 +1715,7 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
     if (!form.name || !form.phone) { toast.error("الاسم والهاتف مطلوبان"); return; }
     const newC: Customer = { id: uid(), ...form, totalPurchases: 0, visits: 0, points: 0, status: "عادي" };
     setCustomers(prev => [newC, ...prev]);
+    onSync?.("add", newC);
     toast.success("تمت إضافة العميل بنجاح");
     setShowAdd(false);
     setForm({ name: "", phone: "", email: "", city: "" });
@@ -1714,11 +1726,18 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
   }
   function saveEdit() {
     if (!editC) return;
-    setCustomers(prev => prev.map(c => c.id === editC.id ? { ...c, ...editForm } : c));
+    const updated = { ...editC, ...editForm };
+    setCustomers(prev => prev.map(c => c.id === editC.id ? updated : c));
+    onSync?.("update", updated, editC.id);
     toast.success("تم تحديث بيانات العميل");
     setEditC(null);
   }
-  function deleteCustomer(id: number) { setCustomers(prev => prev.filter(c => c.id !== id)); toast.success("تم حذف العميل"); }
+  function deleteCustomer(id: number) {
+    const c = customers.find(x => x.id === id);
+    setCustomers(prev => prev.filter(c => c.id !== id));
+    onSync?.("delete", c, id);
+    toast.success("تم حذف العميل");
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -1863,7 +1882,7 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
 }
 
 // ─── Suppliers Screen ─────────────────────────────────────────────────────────
-function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Supplier[]; setSuppliers: (u: Supplier[] | ((p: Supplier[]) => Supplier[])) => void; purchases: Purchase[] }) {
+function SuppliersScreen({ suppliers, setSuppliers, purchases, onSync }: { suppliers: Supplier[]; setSuppliers: (u: Supplier[] | ((p: Supplier[]) => Supplier[])) => void; purchases: Purchase[]; onSync?: (action: "add"|"update"|"delete", item: any, prevId?: any) => void }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [viewS, setViewS] = useState<Supplier | null>(null);
@@ -1876,17 +1895,25 @@ function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Su
     if (!form.name) { toast.error("اسم الشركة مطلوب"); return; }
     const newS: Supplier = { id: uid(), ...form, balance: 0, status: "نشط", products: 0 };
     setSuppliers(prev => [newS, ...prev]);
+    onSync?.("add", newS);
     toast.success("تمت إضافة المورد بنجاح");
     setShowAdd(false); setForm({ name: "", contact: "", phone: "", email: "", city: "" });
   }
   function openEditS(s: Supplier) { setEditS(s); setEditForm({ name: s.name, contact: s.contact, phone: s.phone, email: s.email, city: s.city }); }
   function saveEditS() {
     if (!editS) return;
-    setSuppliers(prev => prev.map(s => s.id === editS.id ? { ...s, ...editForm } : s));
+    const updated = { ...editS, ...editForm };
+    setSuppliers(prev => prev.map(s => s.id === editS.id ? updated : s));
+    onSync?.("update", updated, editS.id);
     toast.success("تم تحديث بيانات المورد");
     setEditS(null);
   }
-  function deleteSupplier(id: number) { setSuppliers(prev => prev.filter(s => s.id !== id)); toast.success("تم حذف المورد"); }
+  function deleteSupplier(id: number) {
+    const s = suppliers.find(x => x.id === id);
+    setSuppliers(prev => prev.filter(s => s.id !== id));
+    onSync?.("delete", s, id);
+    toast.success("تم حذف المورد");
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -2171,7 +2198,7 @@ function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Pu
 }
 
 // ─── Expenses Screen ──────────────────────────────────────────────────────────
-function ExpensesScreen({ expenses, setExpenses }: { expenses: Expense[]; setExpenses: (u: Expense[] | ((p: Expense[]) => Expense[])) => void }) {
+function ExpensesScreen({ expenses, setExpenses, onSync }: { expenses: Expense[]; setExpenses: (u: Expense[] | ((p: Expense[]) => Expense[])) => void; onSync?: (action: "add"|"delete", item: any, prevId?: string) => void }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ category: "إيجار", description: "", amount: "", paidBy: "أحمد المدير" });
@@ -2182,13 +2209,19 @@ function ExpensesScreen({ expenses, setExpenses }: { expenses: Expense[]; setExp
 
   function addExpense() {
     if (!form.description || !form.amount) { toast.error("الوصف والمبلغ مطلوبان"); return; }
-    const newE: Expense = { id: `EXP-00${bumpExp()}`, ...form, amount: Number(form.amount), date: "5 يوليو 2026", approved: false };
+    const newE: Expense = { id: `EXP-00${bumpExp()}`, ...form, amount: Number(form.amount), date: new Date().toISOString().slice(0,10), approved: false };
     setExpenses(prev => [newE, ...prev]);
+    onSync?.("add", newE);
     toast.success("تمت إضافة المصروف بنجاح");
     setShowAdd(false); setForm({ category: "إيجار", description: "", amount: "", paidBy: "أحمد المدير" });
   }
   function approveExpense(id: string) { setExpenses(prev => prev.map(e => e.id === id ? { ...e, approved: true } : e)); toast.success("تمت الموافقة على المصروف"); }
-  function deleteExpense(id: string) { setExpenses(prev => prev.filter(e => e.id !== id)); toast.success("تم حذف المصروف"); }
+  function deleteExpense(id: string) {
+    const e = expenses.find(x => x.id === id);
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    onSync?.("delete", e, id);
+    toast.success("تم حذف المصروف");
+  }
 
   const catColors: Record<string, string> = { "إيجار": "bg-blue-500/15 text-blue-400", "كهرباء": "bg-yellow-500/15 text-yellow-400", "رواتب": "bg-purple-500/15 text-purple-400", "تسويق": "bg-pink-500/15 text-pink-400", "مواصلات": "bg-cyan-500/15 text-cyan-400", "صيانة": "bg-orange-500/15 text-orange-400", "ماء": "bg-teal-500/15 text-teal-400", "أخرى": "bg-slate-500/15 text-slate-400" };
 
@@ -3161,44 +3194,148 @@ export default function App({
   useEffect(() => { lsSet("storeDataMap", storeDataMap); }, [storeDataMap]);
   useEffect(() => { if (currentUser) lsSet("currentUser", currentUser); }, [currentUser]);
 
-  // ── On mount: verify token + refresh from MongoDB ────────────────────────
   const BASE_API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+  // Map MongoDB TenantStore → frontend TenantStore format
+  function mapDbStore(s: any): TenantStore {
+    return {
+      id: s._id || s.id || s.storeId,
+      storeId: s.storeId || s._id,
+      name: s.name || "",
+      slug: s.slug || s.storeId || "",
+      customDomain: s.customDomain || "",
+      sector: s.sector || "supermarket",
+      ownerName: s.ownerName || "",
+      phone: s.phone || "",
+      email: s.email || "",
+      address: s.address || "",
+      logo: s.logo || "",
+      taxNumber: s.taxNumber || "",
+      currency: s.currency || "JOD",
+      timezone: s.timezone || "Asia/Amman",
+      planId: s.planId || "starter",
+      status: s.status || "active",
+      subscriptionStatus: s.subscriptionStatus || s.status || "active",
+      maxUsers: s.maxUsers ?? 3,
+      maxProducts: s.maxProducts ?? 500,
+      maxBranches: s.maxBranches ?? 1,
+      usersCount: s.usersCount ?? 0,
+      productsCount: s.productsCount ?? 0,
+      branchesCount: s.branchesCount ?? 0,
+      totalSales: s.totalSales ?? 0,
+      createdAt: s.createdAt ? new Date(s.createdAt).toISOString().slice(0, 10) : "",
+      updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString().slice(0, 10) : "",
+      trialEndsAt: s.trialEndsAt ? new Date(s.trialEndsAt).toISOString().slice(0, 10) : undefined,
+      subscriptionEndsAt: s.subscriptionEndsAt ? new Date(s.subscriptionEndsAt).toISOString().slice(0, 10) : undefined,
+    };
+  }
+
+  // Map MongoDB User → frontend AppUser format
+  function mapDbUser(u: any): AppUser {
+    return {
+      id: u._id || u.id,
+      name: u.name || "",
+      email: u.email || "",
+      username: u.username || "",
+      role: u.role || "كاشير",
+      status: u.status || "نشط",
+      lastLogin: u.lastLogin ? new Date(u.lastLogin).toLocaleString("ar-JO") : "",
+      permissions: u.permissions ?? 3,
+      password: "", // never store password in state
+      storeSlug: u.storeSlug || "",
+    };
+  }
+
+  // ── Core sync function — fetches all platform data from MongoDB ────────────
+  const [isSyncing, setIsSyncing] = useState(false);
 
   async function syncFromMongoDB(forceUser?: AppUser) {
     const user = forceUser ?? currentUser;
     if (!user || user.role !== "مالك المنصة") return;
-    let token = localStorage.getItem("pos_token");
 
-    // If no token → try to re-authenticate silently using saved password
+    let token = localStorage.getItem("pos_token");
     if (!token) {
-      try {
-        const r = await fetch(`${BASE_API}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: user.username, password: user.password }),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          if (d.token) { localStorage.setItem("pos_token", d.token); token = d.token; }
-        }
-      } catch {}
+      // Try credentials stored in sessionStorage (set during this session's login)
+      const storedCreds = sessionStorage.getItem("sowwan_admin_creds");
+      if (storedCreds) {
+        try {
+          const { username, password } = JSON.parse(storedCreds);
+          const r = await fetch(`${BASE_API}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (r.ok) {
+            const d = await r.json();
+            if (d.token) { localStorage.setItem("pos_token", d.token); token = d.token; }
+          }
+        } catch {}
+      }
     }
 
-    if (!token) return; // still no token — fully offline
+    if (!token) {
+      toast.error("لا يوجد اتصال بالسيرفر — يرجى تسجيل الخروج وإعادة الدخول للمزامنة");
+      return;
+    }
+
+    setIsSyncing(true);
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    // Verify token
-    const me = await fetch(`${BASE_API}/auth/me`, { headers, signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
-    if (!me?.user) { localStorage.removeItem("pos_token"); return; }
+    try {
+      // Verify token is still valid
+      const me = await fetch(`${BASE_API}/auth/me`, { headers, signal: AbortSignal.timeout(8000) })
+        .then(r => r.ok ? r.json() : null).catch(() => null);
 
-    // Pull stores + users from MongoDB
-    fetch(`${BASE_API}/platform/stores`, { headers })
-      .then(r => r.json()).then(d => { if (Array.isArray(d.data) && d.data.length > 0) setTenantStores(d.data); }).catch(() => {});
-    fetch(`${BASE_API}/users`, { headers })
-      .then(r => r.json()).then(d => { if (Array.isArray(d.data)) setUsers(d.data); }).catch(() => {});
-    fetch(`${BASE_API}/platform/plans`, { headers })
-      .then(r => r.json()).then(d => { if (Array.isArray(d.data) && d.data.length > 0) setPlans(d.data); }).catch(() => {});
+      if (!me?.user) {
+        localStorage.removeItem("pos_token");
+        toast.error("انتهت الجلسة — يرجى تسجيل الدخول مجدداً");
+        setIsSyncing(false);
+        return;
+      }
+
+      // Fetch all platform data in parallel
+      const [storesRes, usersRes, plansRes] = await Promise.all([
+        fetch(`${BASE_API}/platform/stores`, { headers }).then(r => r.json()).catch(() => null),
+        fetch(`${BASE_API}/users`, { headers }).then(r => r.json()).catch(() => null),
+        fetch(`${BASE_API}/platform/plans`, { headers }).then(r => r.json()).catch(() => null),
+      ]);
+
+      let synced = 0;
+      if (storesRes?.data && Array.isArray(storesRes.data)) {
+        const mapped = storesRes.data.map(mapDbStore);
+        setTenantStores(mapped);
+        synced++;
+      }
+      if (usersRes?.data && Array.isArray(usersRes.data)) {
+        const mapped = usersRes.data.map(mapDbUser);
+        if (mapped.length > 0) setUsers(prev => {
+          // Keep local platform owner, merge with DB users
+          const platformOwner = prev.find(u => u.role === "مالك المنصة");
+          const dbUsers = mapped.filter(u => u.role !== "مالك المنصة");
+          return platformOwner ? [platformOwner, ...dbUsers] : mapped;
+        });
+        synced++;
+      }
+      if (plansRes?.data && Array.isArray(plansRes.data) && plansRes.data.length > 0) {
+        setPlans(plansRes.data.map((p: any) => ({
+          id: p._id || p.id,
+          name: p.name, nameAr: p.nameAr,
+          price: p.price, billingCycle: p.billingCycle || "monthly",
+          maxUsers: p.maxUsers, maxProducts: p.maxProducts, maxBranches: p.maxBranches,
+          features: p.features || [], color: p.color || "bg-blue-500",
+          popular: p.popular,
+        })));
+        synced++;
+      }
+
+      if (synced > 0) toast.success(`تمت المزامنة — ${synced} مجموعات بيانات محدّثة من السيرفر`);
+      else toast.error("السيرفر متصل لكن لا توجد بيانات بعد");
+    } catch {
+      toast.error("خطأ في الاتصال بالسيرفر");
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   useEffect(() => {
@@ -3223,14 +3360,19 @@ export default function App({
 
   function handleSaleComplete(sale: Sale) {
     setSales(prev => [sale, ...prev]);
+    syncSale(sale);
     addAuditLog("إتمام بيع", "sale", sale.id, `فاتورة ${sale.id} — ${fmtCurrency(sale.amount)} — ${sale.method}`);
   }
-  function handleLogin(user: AppUser) {
+  function handleLogin(user: AppUser, rawPassword?: string) {
     const now = new Date().toLocaleString("ar-JO");
     const loggedUser = { ...user, lastLogin: now };
     setUsers(prev => prev.map(u => u.id === user.id ? loggedUser : u));
     setCurrentUser(loggedUser);
     lsSet("currentUser", loggedUser);
+    // Store credentials in sessionStorage for silent re-auth (cleared on tab close)
+    if (rawPassword && user.username) {
+      try { sessionStorage.setItem("sowwan_admin_creds", JSON.stringify({ username: user.username, password: rawPassword })); } catch {}
+    }
     // Log login event
     const loginLog: AuditLog = {
       id: `a${Date.now()}`,
@@ -3295,6 +3437,19 @@ export default function App({
     ?? tenantStores.find(s => s.slug === activeStoreSlug)?.sector
     ?? "supermarket";
 
+  // ── MongoDB sync — loads store data from API on mount ────────────────────
+  const isStoreUser = !!currentUser && currentUser.role !== "مالك المنصة";
+  useStoreSync({
+    storeSlug: activeStoreSlug,
+    enabled: isStoreUser,
+    setProducts:  (d) => makeStoreSetter("products")(d),
+    setCustomers: (d) => makeStoreSetter("customers")(d),
+    setSuppliers: (d) => makeStoreSetter("suppliers")(d),
+    setSales:     (d) => makeStoreSetter("sales")(d),
+    setPurchases: (d) => makeStoreSetter("purchases")(d),
+    setExpenses:  (d) => makeStoreSetter("expenses")(d),
+  });
+
   // ── Proxy getters — read from the active store's dataset ─────────────────
   const activeData: StoreData = storeDataMap[activeStoreSlug] ?? defaultStoreData();
   const products  = activeData.products;
@@ -3329,6 +3484,43 @@ export default function App({
   const setCompany    = makeStoreSetter("company");
   const setCompanyLogo = makeStoreSetter("companyLogo");
   const setPayments   = makeStoreSetter("payments");
+
+  // ── API-backed setters: update local state + sync to MongoDB ─────────────
+  const hasToken = !!localStorage.getItem("pos_token");
+
+  function syncProduct(action: "add"|"update"|"delete", item: any, prevId?: number|string) {
+    if (!hasToken) return;
+    if (action === "add") productsDb.create(toApiProduct(item)).then(r => {
+      if (r.ok && r.data?._id) setProducts(prev => prev.map(p => p.id === item.id ? { ...p, id: r.data._id } : p));
+    }).catch(() => {});
+    else if (action === "update" && prevId) productsDb.update(String(prevId), toApiProduct(item)).catch(() => {});
+    else if (action === "delete" && prevId) productsDb.remove(String(prevId)).catch(() => {});
+  }
+  function syncCustomer(action: "add"|"update"|"delete", item: any, prevId?: number|string) {
+    if (!hasToken) return;
+    if (action === "add") customersDb.create(toApiCustomer(item)).then(r => {
+      if (r.ok && r.data?._id) setCustomers(prev => prev.map(c => c.id === item.id ? { ...c, id: r.data._id } : c));
+    }).catch(() => {});
+    else if (action === "update" && prevId) customersDb.update(String(prevId), toApiCustomer(item)).catch(() => {});
+    else if (action === "delete" && prevId) customersDb.remove(String(prevId)).catch(() => {});
+  }
+  function syncSupplier(action: "add"|"update"|"delete", item: any, prevId?: number|string) {
+    if (!hasToken) return;
+    if (action === "add") suppliersDb.create(toApiSupplier(item)).then(r => {
+      if (r.ok && r.data?._id) setSuppliers(prev => prev.map(s => s.id === item.id ? { ...s, id: r.data._id } : s));
+    }).catch(() => {});
+    else if (action === "update" && prevId) suppliersDb.update(String(prevId), toApiSupplier(item)).catch(() => {});
+    else if (action === "delete" && prevId) suppliersDb.remove(String(prevId)).catch(() => {});
+  }
+  function syncSale(sale: any) {
+    if (!hasToken) return;
+    salesDb.create(toApiSale(sale)).catch(() => {});
+  }
+  function syncExpense(action: "add"|"delete", item: any, prevId?: string) {
+    if (!hasToken) return;
+    if (action === "add") expensesDb.create(toApiExpense(item)).catch(() => {});
+    else if (action === "delete" && prevId) expensesDb.remove(prevId).catch(() => {});
+  }
 
   function guardedSetScreen(s: Screen) {
     if (!currentUser) return;
@@ -3377,9 +3569,9 @@ export default function App({
         <div className="flex-1 flex flex-col overflow-hidden" style={{ marginRight: collapsed ? 64 : 260, transition: "margin-right 0.3s" }}>
           <div className="flex items-center justify-between pr-4" style={{ borderBottom: "1px solid rgba(139,92,246,0.1)" }}>
             <PlatformTopBar screen={screen} currentUser={currentUser} onLogout={handleLogout} isDark={isDark} />
-            <button onClick={() => { syncFromMongoDB(); toast.info("جاري مزامنة البيانات من السيرفر..."); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all ml-4 shrink-0">
-              <RefreshCw size={13} /> مزامنة
+            <button onClick={() => syncFromMongoDB()} disabled={isSyncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all ml-4 shrink-0 disabled:opacity-50">
+              <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} /> {isSyncing ? "جاري المزامنة..." : "مزامنة"}
             </button>
           </div>
           <main className="flex-1 overflow-y-auto">
@@ -3424,13 +3616,13 @@ export default function App({
     switch (screen) {
       case "dashboard": return <DashboardScreen products={products} sales={sales} setScreen={guardedSetScreen} customers={customers} suppliers={suppliers} />;
       case "pos": return <POSScreen onSaleComplete={handleSaleComplete} products={products} payments={payments} company={company} companyLogo={companyLogo} customers={customers} onCustomerUpdate={(id, updates) => setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c))} />;
-      case "products": return <ProductsScreen products={products} setProducts={setProducts} />;
+      case "products": return <ProductsScreen products={products} setProducts={setProducts} onSync={syncProduct} />;
       case "inventory": return <InventoryScreen products={products} setProducts={setProducts} />;
       case "sales": return <SalesScreen sales={sales} setSales={setSales} company={company} companyLogo={companyLogo} />;
       case "purchases": return <PurchasesScreen purchases={purchases} setPurchases={setPurchases} suppliers={suppliers} />;
-      case "customers": return <CustomersScreen customers={customers} setCustomers={setCustomers} />;
-      case "suppliers": return <SuppliersScreen suppliers={suppliers} setSuppliers={setSuppliers} purchases={purchases} />;
-      case "expenses": return <ExpensesScreen expenses={expenses} setExpenses={setExpenses} />;
+      case "customers": return <CustomersScreen customers={customers} setCustomers={setCustomers} onSync={syncCustomer} />;
+      case "suppliers": return <SuppliersScreen suppliers={suppliers} setSuppliers={setSuppliers} purchases={purchases} onSync={syncSupplier} />;
+      case "expenses": return <ExpensesScreen expenses={expenses} setExpenses={setExpenses} onSync={syncExpense} />;
       case "reports": return <ReportsScreen sales={sales} products={products} expenses={expenses} users={users.filter(u => u.storeSlug === activeStoreSlug)} company={company} />;
       case "users": return <UsersScreen users={users} setUsers={setUsers} currentUserId={currentUser!.id} currentUserSlug={activeStoreSlug !== "__platform__" ? activeStoreSlug : currentUser!.storeSlug} />;
       case "appointments": return <AppointmentsScreen storeSlug={activeStoreSlug} customers={customers} setCustomers={setCustomers} />;
