@@ -3861,9 +3861,9 @@ function SmartRoot() {
           setStoreSlug(slug);
           setStoreObj({ slug, name: d.data.name, status: d.data.status, sector: d.data.sector });
         } else {
-          // Store not found — show error instead of platform login
-          setStoreObj({ slug, name: slug, status: "not_found", sector: "supermarket" });
-          setStoreSlug("__not_found__");
+          // Store not found in DB — still show login form (let backend handle auth)
+          setStoreObj({ slug, name: slug, status: "active", sector: "supermarket" });
+          setStoreSlug(slug);
         }
       })
       .catch(() => {
@@ -3880,16 +3880,6 @@ function SmartRoot() {
       <p>جاري التحميل...</p>
     </div>
   );
-
-  // Store not found
-  if (storeSlug === "__not_found__") {
-    return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",direction:"rtl",flexDirection:"column",gap:12,color:"#888"}}>
-      <div style={{fontSize:48}}>🏪</div>
-      <p style={{fontSize:18,color:"#ef4444"}}>المتجر غير موجود</p>
-      <p style={{fontSize:14}}>تأكد من صحة الرابط أو تواصل مع المسؤول</p>
-      <a href="/" style={{color:"#6366f1",textDecoration:"underline"}}>العودة للرئيسية</a>
-    </div>;
-  }
 
   // Store route — show store login/dashboard
   if (storeSlug && storeObj) {
