@@ -921,16 +921,19 @@ function OFFImportModal({ onImport, onClose }: {
   const inputCls = "w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary";
 
   function ProductCard({ p }: { p: OFFProduct }) {
+    const [imgOk, setImgOk] = useState(!!p.image);
     return (
       <div className="flex items-start gap-3 p-3 rounded-xl bg-foreground/4 border border-border hover:border-primary/40 transition-all">
-        {p.image ? (
-          <img src={p.image} alt={p.nameAr} className="w-14 h-14 rounded-lg object-contain bg-white shrink-0 border border-border" />
+        {p.image && imgOk ? (
+          <img src={p.image} alt={p.nameAr}
+            onError={() => setImgOk(false)}
+            className="w-14 h-14 rounded-lg object-contain bg-white shrink-0 border border-border" />
         ) : (
           <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center shrink-0"><Package size={22} className="text-muted-foreground" /></div>
         )}
         <div className="flex-1 min-w-0">
           <p className="font-bold text-sm text-foreground truncate">{p.nameAr || p.nameEn}</p>
-          {p.nameEn && p.nameAr && <p className="text-xs text-muted-foreground truncate">{p.nameEn}</p>}
+          {p.nameEn && p.nameAr && p.nameEn !== p.nameAr && <p className="text-xs text-muted-foreground truncate">{p.nameEn}</p>}
           <div className="flex gap-2 mt-1 flex-wrap">
             {p.brand && <span className="text-[10px] bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-full">{p.brand}</span>}
             {p.quantity && <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{p.quantity}</span>}
