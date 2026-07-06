@@ -1,6 +1,6 @@
 // Shared types, utilities, and UI components used across multiple screen files
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   X, Banknote, CreditCard, Smartphone, Hash, Tag, Gift,
   TrendingUp, ArrowUpRight, ArrowDownRight,
@@ -160,7 +160,7 @@ export function CSSBarChart({ data, dataKey, color = "#3B82F6", height = 180 }: 
 }) {
   const vals = data.map(d => (d[dataKey] as number) || 0);
   const maxVal = Math.max(...vals, 1);
-  const [tooltip, setTooltip] = React.useState<{ idx: number; x: number; y: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{ idx: number; x: number; y: number } | null>(null);
   const labelKey = Object.keys(data[0] ?? {}).find(k => k !== dataKey) ?? "label";
   return (
     <div style={{ height }} className="flex flex-col relative" onMouseLeave={() => setTooltip(null)}>
