@@ -402,15 +402,16 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
         adminPassword: password,
       });
       if (r && (r._id || r.storeId)) {
+        const finalUsername = r.adminUsername || username; // use actual created username
         const savedStore = { ...newStore, id: r._id || r.storeId };
-        const savedUser = { ...adminUser };
+        const savedUser = { ...adminUser, username: finalUsername };
         setStores(prev => [savedStore, ...prev]);
         setUsers(prev => [...prev, savedUser]);
-        setNewCredentials({ storeName: data.name ?? "", username, password });
+        setNewCredentials({ storeName: data.name ?? "", username: finalUsername, password });
         if (r.adminCreated) {
-          toast.success(`✅ تم إنشاء المتجر والمستخدم "${username}" وحفظهم في السيرفر`);
+          toast.success(`✅ تم إنشاء المتجر والمستخدم "${finalUsername}" وحفظهم في السيرفر`);
         } else {
-          toast.warning(`⚠ تم إنشاء المتجر لكن فشل إنشاء المستخدم — استخدم "إضافة مستخدم جديد" في بيانات الدخول`);
+          toast.error(`⚠ تم إنشاء المتجر لكن فشل إنشاء المستخدم: ${r.adminError || "خطأ غير معروف"} — استخدم "إضافة مستخدم جديد"`);
         }
       }
     } catch (err: any) {
