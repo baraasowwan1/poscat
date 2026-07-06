@@ -3307,15 +3307,24 @@ export default function App({
       ]);
 
       let synced = 0;
-      if (storesRes?.data && Array.isArray(storesRes.data)) {
-        const mapped = storesRes.data.map(mapDbStore);
-        setTenantStores(mapped);
+      const DEMO_IDS = new Set(["s1","s2","s3","s4","s5"]);
+
+      if (storesRes?.data && Array.isArray(storesRes.data) && storesRes.data.length > 0) {
+        // MongoDB has real stores — use them, remove demo stores
+        const dbStores = storesRes.data.map(mapDbStore);
+        setTenantStores(prev => {
+          // Keep any local stores that aren't demo and aren't already in DB
+          const dbIds = new Set(dbStores.map(s => s.storeId));
+          const localOnly = prev.filter(s => !DEMO_IDS.has(s.id) && !dbIds.has(s.storeId));
+          return [...dbStores, ...localOnly];
+        });
         synced++;
       }
-      if (usersRes?.data && Array.isArray(usersRes.data)) {
+      // If MongoDB has 0 stores, keep whatever is local — don't overwrite with empty
+
+      if (usersRes?.data && Array.isArray(usersRes.data) && usersRes.data.length > 0) {
         const mapped = usersRes.data.map(mapDbUser);
-        if (mapped.length > 0) setUsers(prev => {
-          // Keep local platform owner, merge with DB users
+        setUsers(prev => {
           const platformOwner = prev.find(u => u.role === "مالك المنصة");
           const dbUsers = mapped.filter(u => u.role !== "مالك المنصة");
           return platformOwner ? [platformOwner, ...dbUsers] : mapped;
@@ -3574,7 +3583,34 @@ export default function App({
         <div className="flex-1 flex flex-col overflow-hidden" style={{ marginRight: collapsed ? 64 : 260, transition: "margin-right 0.3s" }}>
           <div className="flex items-center justify-between pr-4" style={{ borderBottom: "1px solid rgba(139,92,246,0.1)" }}>
             <PlatformTopBar screen={screen} currentUser={currentUser} onLogout={handleLogout} isDark={isDark} />
-            <button onClick={() => syncFromMongoDB()} disabled={isSyncing}
+            <button onClick={async () => {
+              const token = localStorage.getItem("pos_token");
+              if (!token) {
+                // Ask for password directly
+                const pw = window.prompt("أدخل كلمة مرور السوبر أدمن للمزامنة:");
+                if (!pw) return;
+                try {
+                  const r = await fetch(`${BASE_API}/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: currentUser?.username || "superadmin", password: pw }),
+                    signal: AbortSignal.timeout(10000),
+                  });
+                  if (r.ok) {
+                    const d = await r.json();
+                    if (d.token) {
+                      localStorage.setItem("pos_token", d.token);
+                      sessionStorage.setItem("sowwan_admin_creds", JSON.stringify({ username: currentUser?.username || "superadmin", password: pw }));
+                      await syncFromMongoDB();
+                      return;
+                    }
+                  }
+                  toast.error("كلمة المرور غير صحيحة أو السيرفر غير متاح");
+                } catch { toast.error("لا يوجد اتصال بالسيرفر"); }
+                return;
+              }
+              syncFromMongoDB();
+            }} disabled={isSyncing}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all ml-4 shrink-0 disabled:opacity-50">
               <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} /> {isSyncing ? "جاري المزامنة..." : "مزامنة"}
             </button>
