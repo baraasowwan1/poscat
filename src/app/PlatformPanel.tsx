@@ -678,9 +678,25 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
                 <Copy size={14} /> نسخ بيانات الدخول كاملة
               </button>
 
+              {/* Store Login URL */}
+              {(() => {
+                const storeSlug = stores.find(s => s.name === newCredentials.storeName)?.slug;
+                const loginUrl = storeSlug ? `${window.location.origin}/#/${storeSlug}/login` : null;
+                return loginUrl ? (
+                  <div className="rounded-xl bg-blue-500/8 border border-blue-500/20 p-3 space-y-1.5">
+                    <p className="text-xs font-bold text-blue-300">رابط دخول المتجر</p>
+                    <p className="text-xs font-mono text-blue-200 break-all" dir="ltr">{loginUrl}</p>
+                    <button onClick={() => { navigator.clipboard?.writeText(loginUrl).catch(() => {}); toast.success("تم نسخ الرابط"); }}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-bold transition-all mt-1">
+                      <Copy size={12} /> نسخ رابط الدخول
+                    </button>
+                  </div>
+                ) : null;
+              })()}
+
               <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 flex items-center gap-2">
                 <AlertCircle size={13} className="shrink-0" />
-                احتفظ بهذه البيانات — لن تظهر مرة أخرى. يمكن تغيير كلمة المرور لاحقاً من إدارة المستخدمين.
+                احتفظ بهذه البيانات — لن تظهر مرة أخرى.
               </p>
 
               <button
