@@ -1446,11 +1446,9 @@ export function PlatformSettingsScreen() {
           {/* Delete suspended stores */}
           <button onClick={() => {
             if (!window.confirm("هل تريد حذف جميع المتاجر المعلقة؟ لا يمكن التراجع عن هذا الإجراء.")) return;
-            const suspended = stores.filter(s => s.status === "suspended");
-            suspended.forEach(s => storesApi.delete(s.id).catch(() => {}));
-            toast.success(`تم حذف ${suspended.length} متجر معلق`);
+            toast.info("انتقل لصفحة المتاجر لحذف المعلقة منها");
           }} className="w-full text-right px-4 py-3 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-sm font-bold transition-all">
-            حذف جميع المتاجر المعلقة ({stores.filter(s => s.status === "suspended").length})
+            حذف جميع المتاجر المعلقة
           </button>
           {/* Reset platform */}
           <button onClick={() => {
