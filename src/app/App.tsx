@@ -3249,7 +3249,7 @@ export default function App({
     }
     switch (screen) {
       case "dashboard": return <DashboardScreen products={products} sales={sales} setScreen={guardedSetScreen} customers={customers} suppliers={suppliers} />;
-      case "pos": return <POSScreen onSaleComplete={handleSaleComplete} products={products} payments={payments} company={company} companyLogo={companyLogo} />;
+      case "pos": return <POSScreen onSaleComplete={handleSaleComplete} products={products} payments={payments} company={company} companyLogo={companyLogo} customers={customers} onCustomerUpdate={(id, updates) => setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c))} />;
       case "products": return <ProductsScreen products={products} setProducts={setProducts} />;
       case "inventory": return <InventoryScreen products={products} setProducts={setProducts} />;
       case "sales": return <SalesScreen sales={sales} setSales={setSales} company={company} companyLogo={companyLogo} />;
