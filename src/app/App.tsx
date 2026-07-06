@@ -182,11 +182,12 @@ function LoginScreen({ onLogin, users, stores }: {
         onLogin(apiUser, password);
         return;
       }
-      // API returned error (wrong password, suspended, etc.)
-      if (result.error && !result.error.includes("اتصال")) {
+      // Only block fallback for store-specific status errors
+      if (result.error && (result.error.includes("موقوف") || result.error.includes("معطّل"))) {
         setLoading(false);
         setError({ msg: result.error, type: "error" }); return;
       }
+      // For auth errors (wrong password, not found) → still try local fallback
     } catch {}
 
     // ── Fallback: local users (offline mode) ──────────────────────────────
