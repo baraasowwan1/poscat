@@ -3162,37 +3162,48 @@ export default function App({
   useEffect(() => { if (currentUser) lsSet("currentUser", currentUser); }, [currentUser]);
 
   // ── On mount: verify token + refresh from MongoDB ────────────────────────
-  useEffect(() => {
-    const savedUser = _initSession.user;
-    if (!savedUser) return; // no session to restore
+  const BASE_API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
-    const token = localStorage.getItem("pos_token");
-    const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  async function syncFromMongoDB(forceUser?: AppUser) {
+    const user = forceUser ?? currentUser;
+    if (!user || user.role !== "مالك المنصة") return;
+    let token = localStorage.getItem("pos_token");
 
-    // If no token (offline login), keep session as-is from localStorage
-    if (!token) return;
+    // If no token → try to re-authenticate silently using saved password
+    if (!token) {
+      try {
+        const r = await fetch(`${BASE_API}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: user.username, password: user.password }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.token) { localStorage.setItem("pos_token", d.token); token = d.token; }
+        }
+      } catch {}
+    }
 
+    if (!token) return; // still no token — fully offline
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    // Verify token with API (background, non-blocking)
-    fetch(`${BASE}/auth/me`, { headers, signal: AbortSignal.timeout(8000) })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.user) {
-          // Token expired → clear only token, keep user for offline fallback
-          localStorage.removeItem("pos_token");
-          // Don't force logout — user might be offline; keep session
-          return;
-        }
-        // Token valid → pull fresh MongoDB data in background
-        if (savedUser.role === "مالك المنصة") {
-          fetch(`${BASE}/platform/stores`, { headers })
-            .then(r => r.json()).then(d => { if (Array.isArray(d.data)) setTenantStores(d.data); }).catch(() => {});
-          fetch(`${BASE}/users`, { headers })
-            .then(r => r.json()).then(d => { if (Array.isArray(d.data)) setUsers(d.data); }).catch(() => {});
-        }
-      })
-      .catch(() => { /* offline — keep localStorage session */ });
+    // Verify token
+    const me = await fetch(`${BASE_API}/auth/me`, { headers, signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!me?.user) { localStorage.removeItem("pos_token"); return; }
+
+    // Pull stores + users from MongoDB
+    fetch(`${BASE_API}/platform/stores`, { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d.data) && d.data.length > 0) setTenantStores(d.data); }).catch(() => {});
+    fetch(`${BASE_API}/users`, { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d.data)) setUsers(d.data); }).catch(() => {});
+    fetch(`${BASE_API}/platform/plans`, { headers })
+      .then(r => r.json()).then(d => { if (Array.isArray(d.data) && d.data.length > 0) setPlans(d.data); }).catch(() => {});
+  }
+
+  useEffect(() => {
+    const savedUser = _initSession.user;
+    if (savedUser?.role === "مالك المنصة") syncFromMongoDB(savedUser);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Real audit log helper ─────────────────────────────────────────────────
@@ -3235,8 +3246,8 @@ export default function App({
     setAuditLogs(prev => [loginLog, ...prev].slice(0, 500));
     if (user.role === "مالك المنصة") {
       setScreen("platform-dashboard");
-      storesApi.list().then(r => { if (r.ok && Array.isArray(r.data)) setTenantStores(r.data); });
-      usersApi.list().then(r => { if (r.ok && Array.isArray(r.data)) setUsers(r.data); });
+      // Sync immediately from MongoDB (with token re-auth if needed)
+      setTimeout(() => syncFromMongoDB(user), 500);
     } else {
       setScreen("dashboard");
     }
@@ -3364,7 +3375,13 @@ export default function App({
         <Toaster position="top-center" richColors dir="rtl" expand={false} />
         <PlatformSidebar screen={screen} setScreen={setScreen} collapsed={collapsed} setCollapsed={setCollapsed} isDark={isDark} toggleTheme={() => setIsDark(!isDark)} onLogout={handleLogout} currentUser={currentUser} />
         <div className="flex-1 flex flex-col overflow-hidden" style={{ marginRight: collapsed ? 64 : 260, transition: "margin-right 0.3s" }}>
-          <PlatformTopBar screen={screen} currentUser={currentUser} onLogout={handleLogout} isDark={isDark} />
+          <div className="flex items-center justify-between pr-4" style={{ borderBottom: "1px solid rgba(139,92,246,0.1)" }}>
+            <PlatformTopBar screen={screen} currentUser={currentUser} onLogout={handleLogout} isDark={isDark} />
+            <button onClick={() => { syncFromMongoDB(); toast.info("جاري مزامنة البيانات من السيرفر..."); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all ml-4 shrink-0">
+              <RefreshCw size={13} /> مزامنة
+            </button>
+          </div>
           <main className="flex-1 overflow-y-auto">
             {screen === "platform-dashboard" && <PlatformDashboardScreen stores={tenantStores} plans={plans} setScreen={setScreen} onImpersonate={handleImpersonate} />}
             {screen === "platform-stores" && <PlatformStoresScreen stores={tenantStores} setStores={setTenantStores} plans={plans} onImpersonate={handleImpersonate} users={users} setUsers={setUsers} />}
