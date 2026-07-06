@@ -25,6 +25,7 @@ import type { Screen, AppUser, Plan, TenantStore, AuditLog } from "./types";
 import { generateSlug, PLATFORM_DOMAIN, storeLoginUrl } from "./types";
 import { apiLogin, apiLogout, storesApi, usersApi } from "../lib/useApiData";
 import { SectorProvider, useSector } from "./SectorContext";
+import { StoreLoginPage } from "./StorePortal";
 import { getSectorConfig } from "./sectorConfig";
 import { fetchByBarcode, searchByName, type OFFProduct } from "../lib/openFoodFacts";
 import { useStoreSync } from "../lib/useStoreSync";
@@ -3793,10 +3794,92 @@ function AppInner({
   );
 }
 
-export default function App(props: AppProps) {
+// ─── Smart Root — detects store slug from URL hash ───────────────────────────
+function SmartRoot() {
+  const [storeSlug, setStoreSlug] = useState<string | null>(null);
+  const [storeUser, setStoreUser] = useState<AppUser | null>(null);
+  const [storeObj, setStoreObj] = useState<any | null>(null);
+  const [storeLoading, setStoreLoading] = useState(true);
+  const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+  useEffect(() => {
+    // Parse hash: /#/slug/page or /#/slug
+    const hash = window.location.hash.replace(/^#\/?/, "");
+    const parts = hash.split("/").filter(Boolean);
+    const slug = parts[0];
+    const page = parts[1] || "login";
+
+    if (!slug || slug === "platform") { setStoreLoading(false); return; }
+
+    // Fetch store from backend
+    fetch(`${BASE}/auth/store-check/${slug}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.data) {
+          setStoreSlug(slug);
+          setStoreObj({ slug, name: d.data.name, status: d.data.status, sector: d.data.sector });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setStoreLoading(false));
+  }, [BASE]);
+
+  if (storeLoading) return (
+    <div style={{ display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",direction:"rtl",flexDirection:"column",gap:12,color:"#888" }}>
+      <RefreshCw size={28} className="animate-spin" style={{ color: "#6366f1" }} />
+      <p>جاري التحميل...</p>
+    </div>
+  );
+
+  // Store route — show store login/dashboard
+  if (storeSlug && storeObj) {
+    if (!storeUser) {
+      const store = {
+        id: storeSlug, storeId: storeSlug, slug: storeSlug,
+        name: storeObj.name || storeSlug, sector: storeObj.sector || "supermarket",
+        status: storeObj.status || "active", subscriptionStatus: "active",
+        customDomain: "", ownerName: "", phone: "", email: "", address: "", logo: "", taxNumber: "",
+        currency: "JOD", timezone: "Asia/Amman", planId: "starter",
+        maxUsers: 999, maxProducts: 999999, maxBranches: 999,
+        usersCount: 0, productsCount: 0, branchesCount: 0, totalSales: 0,
+        createdAt: "", updatedAt: "",
+      };
+      if (store.status === "suspended") {
+        return <div style={{ display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",direction:"rtl",color:"#ef4444",fontSize:18 }}>هذا المتجر معلق</div>;
+      }
+      return <StoreLoginPage store={store} users={[]} onLogin={(u: AppUser) => {
+        setStoreUser(u);
+        window.location.hash = `/${storeSlug}/dashboard`;
+      }} />;
+    }
+    // Logged in — show store app
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AppInner initialStoreSlug={storeSlug} initialUser={storeUser} onLogout={() => {
+          setStoreUser(null);
+          window.location.hash = `/${storeSlug}/login`;
+        }} />
+      </QueryClientProvider>
+    );
+  }
+
+  // Platform route — show platform admin
   return (
     <QueryClientProvider client={queryClient}>
-      <AppInner {...props} />
+      <AppInner />
     </QueryClientProvider>
   );
+}
+
+export default function App(props: AppProps) {
+  // When called with props (from Router.tsx or platform panel), render normally
+  if (props.initialPlatformUser || props.initialUser || props.initialStoreSlug) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AppInner {...props} />
+      </QueryClientProvider>
+    );
+  }
+  // When called as root (Figma Make entry point), use smart routing
+  return <SmartRoot />;
 }
