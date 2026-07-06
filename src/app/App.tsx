@@ -760,34 +760,35 @@ function DashboardScreen({ products, sales, setScreen, customers, suppliers }: {
 }) {
   const lowStock = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
   const outOfStock = products.filter(p => p.stock === 0).length;
-  const todayStr = new Date().toLocaleDateString("ar-JO", { year: "numeric", month: "long", day: "numeric" });
+  // Normalize a sale date to YYYY-MM-DD for comparison (supports both old Arabic and new ISO format)
+  function normDate(raw: string): string {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw; // already ISO
+    const d = new Date(raw); // try parsing Arabic locale
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    return raw; // fallback
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
   const completedSales = sales.filter(s => s.status === "مكتمل");
-  const todaySales = completedSales.filter(s => s.date === todayStr).reduce((a, s) => a + s.amount, 0);
+  const todaySales = completedSales.filter(s => normDate(s.date) === todayStr).reduce((a, s) => a + s.amount, 0);
 
-  // Monthly profit — current month completed sales (estimated: 30% margin)
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
   const monthlyRevenue = completedSales
     .filter(s => {
-      try {
-        // Try to match by parsing dates or string comparison
-        if (!s.date) return false;
-        // Arabic date string — check if contains current month name
-        const monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-        return s.date.includes(monthNames[thisMonth]) || s.date.includes(String(thisYear));
-      } catch { return false; }
+      const nd = normDate(s.date);
+      const d = new Date(nd);
+      return !isNaN(d.getTime()) && d.getMonth() === thisMonth && d.getFullYear() === thisYear;
     })
     .reduce((a, s) => a + s.amount, 0);
-  const monthlyProfit = monthlyRevenue * 0.30; // estimated 30% margin
+  const monthlyProfit = monthlyRevenue * 0.30;
 
-  // Weekly sales chart — last 7 days
   const days = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
   const weekData = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    const dayIso = d.toISOString().slice(0, 10);
     const label = days[d.getDay()];
-    const dayStr = d.toLocaleDateString("ar-JO", { year: "numeric", month: "long", day: "numeric" });
-    const daySales = completedSales.filter(s => s.date === dayStr).reduce((a, s) => a + s.amount, 0);
+    const daySales = completedSales.filter(s => normDate(s.date) === dayIso).reduce((a, s) => a + s.amount, 0);
     return { day: label, sales: daySales, profit: daySales * 0.3 };
   });
   return (
@@ -1643,7 +1644,10 @@ function SalesScreen({ sales, setSales, company, companyLogo }: { sales: Sale[];
                   </td>
                   <td className="px-5 py-3.5 text-sm font-medium text-foreground">{s.customer}</td>
                   <td className="px-5 py-3.5 text-sm text-muted-foreground">{s.cashier}</td>
-                  <td className="px-5 py-3.5 text-xs text-muted-foreground">{s.date}<br /><span className="text-muted-foreground/60">{s.time}</span></td>
+                  <td className="px-5 py-3.5 text-xs text-muted-foreground">
+                    {/^\d{4}-\d{2}-\d{2}$/.test(s.date) ? new Date(s.date).toLocaleDateString("ar-JO",{year:"numeric",month:"long",day:"numeric"}) : s.date}
+                    <br /><span className="text-muted-foreground/60">{s.time}</span>
+                  </td>
                   <td className="px-5 py-3.5 text-sm text-muted-foreground text-center">{s.items}</td>
                   <td className="px-5 py-3.5"><Badge label={s.method} type="info" /></td>
                   <td className="px-5 py-3.5 text-sm font-bold text-foreground">{fmtCurrency(s.amount)}</td>
