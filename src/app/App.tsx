@@ -2904,7 +2904,17 @@ function UsersScreen({ users, setUsers, currentUserId, currentUserSlug }: { user
     if (id === 9999) { toast.error("لا يمكن حذف مالك المنصة"); return; }
     if (!belongsToStore(id)) { toast.error("لا يمكنك حذف مستخدم من متجر آخر"); return; }
     if (id === currentUserId) { toast.error("لا يمكنك حذف حسابك الخاص"); return; }
+    // Delete from local state
     setUsers(prev => prev.filter(u => u.id !== id));
+    // Delete from MongoDB — use string ID (works for both int IDs and ObjectId strings)
+    const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const token = localStorage.getItem("pos_token");
+    if (token) {
+      fetch(`${BASE}/users/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
     toast.success("تم حذف المستخدم");
   }
 
@@ -3306,27 +3316,23 @@ export default function App({
       ]);
 
       let synced = 0;
-      const DEMO_IDS = new Set(["s1","s2","s3","s4","s5"]);
-
-      if (storesRes?.data && Array.isArray(storesRes.data) && storesRes.data.length > 0) {
-        // MongoDB has real stores — use them, remove demo stores
+      // REPLACE with MongoDB data — no merge (prevents duplicates and ghost data)
+      if (storesRes?.data && Array.isArray(storesRes.data)) {
         const dbStores = storesRes.data.map(mapDbStore);
-        setTenantStores(prev => {
-          // Keep any local stores that aren't demo and aren't already in DB
-          const dbIds = new Set(dbStores.map(s => s.storeId));
-          const localOnly = prev.filter(s => !DEMO_IDS.has(s.id) && !dbIds.has(s.storeId));
-          return [...dbStores, ...localOnly];
-        });
+        // Deduplicate by storeId
+        const seen = new Set<string>();
+        const unique = dbStores.filter(s => { const k = s.storeId || s.id; return seen.has(k) ? false : (seen.add(k), true); });
+        setTenantStores(unique);
         synced++;
       }
-      // If MongoDB has 0 stores, keep whatever is local — don't overwrite with empty
 
-      if (usersRes?.data && Array.isArray(usersRes.data) && usersRes.data.length > 0) {
+      if (usersRes?.data && Array.isArray(usersRes.data)) {
         const mapped = usersRes.data.map(mapDbUser);
+        // Keep local platform owner (with password), replace all others with MongoDB
         setUsers(prev => {
-          const platformOwner = prev.find(u => u.role === "مالك المنصة");
-          const dbUsers = mapped.filter(u => u.role !== "مالك المنصة");
-          return platformOwner ? [platformOwner, ...dbUsers] : mapped;
+          const localOwner = prev.find(u => u.role === "مالك المنصة" && u.password);
+          const dbNonOwner = mapped.filter(u => u.role !== "مالك المنصة");
+          return localOwner ? [localOwner, ...dbNonOwner] : mapped;
         });
         synced++;
       }
