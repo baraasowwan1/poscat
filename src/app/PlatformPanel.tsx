@@ -324,12 +324,17 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
     return matchSearch && matchStatus && matchPlan;
   });
 
-  function toggleStatus(id: string) {
-    const store = stores.find(s => s.id === id);
-    const newStatus = store?.status === "active" ? "suspended" : "active";
-    setStores(prev => prev.map(s => s.id === id ? { ...s, status: newStatus as any } : s));
+  function changeStatus(id: string, newStatus: string) {
+    const extra: Partial<TenantStore> = {};
+    if (newStatus === "active") {
+      // Activate: set subscription end to +1 month, clear trial
+      extra.subscriptionStatus = "active";
+      extra.subscriptionEndsAt = new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0];
+      extra.trialEndsAt = undefined;
+    }
+    setStores(prev => prev.map(s => s.id === id ? { ...s, status: newStatus as any, ...extra } : s));
     storesApi.toggle(id, newStatus).catch(() => {});
-    toast.success("تم تحديث حالة المتجر");
+    toast.success(`تم تغيير حالة المتجر إلى: ${newStatus === "active" ? "نشط" : newStatus === "suspended" ? "معلق" : newStatus === "trial" ? "تجريبي" : "غير نشط"}`);
   }
 
   function deleteStore(id: string) {
@@ -459,9 +464,19 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
                     <span className={`text-xs px-2 py-1 rounded-full font-bold text-white ${plan?.color ?? "bg-slate-500"}`}>{plan?.nameAr}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded-full font-bold border ${s.status === "active" ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : s.status === "trial" ? "border-amber-500/30 text-amber-400 bg-amber-500/10" : s.status === "suspended" ? "border-red-500/30 text-red-400 bg-red-500/10" : "border-slate-500/30 text-slate-400 bg-slate-500/10"}`}>
-                      {s.status === "active" ? "نشط" : s.status === "trial" ? "تجريبي" : s.status === "suspended" ? "معلق" : "غير نشط"}
-                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold border w-fit ${s.status === "active" ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : s.status === "trial" ? "border-amber-500/30 text-amber-400 bg-amber-500/10" : s.status === "suspended" ? "border-red-500/30 text-red-400 bg-red-500/10" : "border-slate-500/30 text-slate-400 bg-slate-500/10"}`}>
+                        {s.status === "active" ? "نشط" : s.status === "trial" ? "تجريبي" : s.status === "suspended" ? "معلق" : "غير نشط"}
+                      </span>
+                      {s.status === "trial" && s.trialEndsAt && (() => {
+                        const daysLeft = Math.ceil((new Date(s.trialEndsAt).getTime() - Date.now()) / 864e5);
+                        return (
+                          <span className={`text-[10px] font-semibold ${daysLeft <= 0 ? "text-red-400" : daysLeft <= 3 ? "text-amber-400" : "text-muted-foreground"}`}>
+                            {daysLeft <= 0 ? "⚠ انتهت التجربة" : `ينتهي بعد ${daysLeft} يوم`}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </td>
                   <td className="px-4 py-3 hidden xl:table-cell font-bold text-emerald-400">{s.totalSales.toLocaleString()} JOD</td>
                   <td className="px-4 py-3">
@@ -469,9 +484,22 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
                       <button onClick={() => onImpersonate(s)} title="فتح المتجر" className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all"><Eye size={13} /> فتح</button>
                       <button onClick={() => setViewCredsStore(s)} title="بيانات الدخول" className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 transition-all"><Key size={15} /></button>
                       <button onClick={() => { setEditStore(s); setShowModal(true); }} title="تعديل" className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-500/10 transition-all"><Edit2 size={15} /></button>
-                      <button onClick={() => toggleStatus(s.id)} title={s.status === "active" ? "تعليق" : "تفعيل"} className={`p-1.5 rounded-lg transition-all ${s.status === "active" ? "text-amber-400 hover:bg-amber-500/10" : "text-emerald-400 hover:bg-emerald-500/10"}`}>
-                        {s.status === "active" ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
-                      </button>
+                      <select
+                        value={s.status}
+                        onChange={e => changeStatus(s.id, e.target.value)}
+                        className={`text-xs px-2 py-1.5 rounded-lg border font-bold cursor-pointer focus:outline-none transition-all ${
+                          s.status === "active"    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                          s.status === "trial"     ? "bg-amber-500/10 border-amber-500/30 text-amber-400" :
+                          s.status === "suspended" ? "bg-red-500/10 border-red-500/30 text-red-400" :
+                          "bg-slate-500/10 border-slate-500/30 text-slate-400"
+                        }`}
+                        title="تغيير الحالة"
+                      >
+                        <option value="active">نشط</option>
+                        <option value="trial">تجريبي</option>
+                        <option value="suspended">معلق</option>
+                        <option value="inactive">غير نشط</option>
+                      </select>
                       <button onClick={() => setDeleteId(s.id)} title="حذف" className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"><Trash2 size={15} /></button>
                     </div>
                   </td>
