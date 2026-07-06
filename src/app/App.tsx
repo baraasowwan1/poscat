@@ -162,6 +162,48 @@ function LoginScreen({ onLogin, users, stores }: {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<{ msg: string; type: "error" | "suspended" | "inactive" }>({ msg: "", type: "error" });
 
+  // ── Detect store slug in URL and redirect to store login ────────────────
+  const [storeLoginData, setStoreLoginData] = useState<{ slug: string; storeObj: any } | null>(null);
+  const [checkingStore, setCheckingStore] = useState(true);
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#\/?/, "");
+    const slug = hash.split("/")[0];
+    if (!slug || slug === "platform" || slug === "") { setCheckingStore(false); return; }
+    const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    fetch(`${BASE}/auth/store-check/${slug}`, { signal: AbortSignal.timeout(5000) })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.data) setStoreLoginData({ slug, storeObj: d.data });
+        else setStoreLoginData({ slug, storeObj: { name: slug, status: "active", sector: "supermarket" } });
+      })
+      .catch(() => { setStoreLoginData({ slug, storeObj: { name: slug, status: "active", sector: "supermarket" } }); })
+      .finally(() => setCheckingStore(false));
+  }, []);
+
+  if (checkingStore) return (
+    <div style={{ display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"Cairo",color:"#888",flexDirection:"column",gap:12 }}>
+      <div style={{ width:28,height:28,border:"3px solid #6366f1",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite" }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <p>جاري التحميل...</p>
+    </div>
+  );
+
+  if (storeLoginData) {
+    const { slug, storeObj } = storeLoginData;
+    const storeForLogin = {
+      id: slug, storeId: slug, slug,
+      name: storeObj.name || slug, sector: storeObj.sector || "supermarket",
+      status: storeObj.status || "active", subscriptionStatus: "active",
+      customDomain: "", ownerName: "", phone: "", email: "", address: "", logo: "", taxNumber: "",
+      currency: "JOD", timezone: "Asia/Amman", planId: "starter",
+      maxUsers: 999, maxProducts: 999999, maxBranches: 999,
+      usersCount: 0, productsCount: 0, branchesCount: 0, totalSales: 0,
+      createdAt: "", updatedAt: "",
+    };
+    return <StoreLoginPage store={storeForLogin} users={[]} onLogin={(u) => onLogin(u)} />;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError({ msg: "", type: "error" });
