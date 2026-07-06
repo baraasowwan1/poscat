@@ -3180,19 +3180,10 @@ export default function App({
   }
 
   // ── Persistent state — survives page reload ───────────────────────────────
-  // users — localStorage is source of truth, INIT_USERS as first-run seed
+  // users — API is source of truth; start empty, populate via syncFromMongoDB
   const [users, setUsers] = useState<AppUser[]>(() => {
-    const stored: AppUser[] = lsGet("users", []);
-    if (stored.length > 0) {
-      // Ensure platform owner always has a password (might be wiped by sync)
-      const hasOwnerWithPw = stored.some(u => u.role === "مالك المنصة" && u.password);
-      if (!hasOwnerWithPw) {
-        const owner = INIT_USERS[0]; // superadmin
-        return [owner, ...stored.filter(u => u.role !== "مالك المنصة")];
-      }
-      return stored;
-    }
-    return INIT_USERS; // first ever run
+    // Always keep platform owner record in memory so login screen can identify it
+    return [PLATFORM_ADMIN];
   });
 
   // ── Per-store isolated data ───────────────────────────────────────────────
@@ -3212,14 +3203,11 @@ export default function App({
     lsGet("storeDataMap", {})
   );
 
-  // tenantStores — NEVER load INIT_STORES. Start empty, load from MongoDB.
+  // tenantStores — API is source of truth; start empty, populate via syncFromMongoDB
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
-    const stored: TenantStore[] = lsGet("tenantStores", []);
-    // Filter out demo stores that might be in localStorage
-    const real = stored.filter(s => !["s1","s2","s3","s4","s5"].includes(s.id));
-    return real.map(s => s.sector ? s : { ...s, sector: "supermarket" });
+    return [];
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -3236,8 +3224,7 @@ export default function App({
   }, [isDark]);
 
   // ── Auto-save to localStorage on every change ─────────────────────────────
-  useEffect(() => { lsSet("users", users); }, [users]);
-  useEffect(() => { lsSet("tenantStores", tenantStores); }, [tenantStores]);
+  // NOTE: users and tenantStores are NOT auto-saved — they live in MongoDB only
   useEffect(() => { lsSet("plans", plans); }, [plans]);
   useEffect(() => { lsSet("auditLogs", auditLogs); }, [auditLogs]);
   useEffect(() => { lsSet("storeDataMap", storeDataMap); }, [storeDataMap]);
@@ -3633,6 +3620,19 @@ export default function App({
   // isPlatformUser and isImpersonating declared earlier (above guardedSetScreen)
 
   if (isPlatformUser && isPlatformScreen && !isImpersonating) {
+    // Show a loading overlay while fetching stores/users/plans from API on first load
+    if (isSyncing && tenantStores.length === 0) {
+      return (
+        <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center">
+          <Toaster position="top-center" richColors dir="rtl" />
+          <div className="text-center space-y-4">
+            <RefreshCw size={40} className="animate-spin text-purple-400 mx-auto" />
+            <p className="text-foreground font-bold text-lg">جاري تحميل بيانات المنصة...</p>
+            <p className="text-muted-foreground text-sm">يتم جلب المتاجر والمستخدمين والخطط من السيرفر</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div dir="rtl" className="min-h-screen bg-background flex">
         <style>{`.scrollbar-hide{scrollbar-width:none;-ms-overflow-style:none}.scrollbar-hide::-webkit-scrollbar{display:none}body,*{font-family:'Cairo',sans-serif}`}</style>
