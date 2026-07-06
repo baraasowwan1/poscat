@@ -337,15 +337,21 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
     toast.success(`تم تغيير حالة المتجر إلى: ${newStatus === "active" ? "نشط" : newStatus === "suspended" ? "معلق" : newStatus === "trial" ? "تجريبي" : "غير نشط"}`);
   }
 
-  function deleteStore(id: string) {
+  async function deleteStore(id: string) {
     const store = stores.find(s => s.id === id);
+    // Remove from local state immediately
     setStores(prev => prev.filter(s => s.id !== id));
     if (store?.slug) setUsers(prev => prev.filter(u => u.storeSlug !== store.slug));
-    // Only try MongoDB delete for real stores (not demo stores with ids s1-s5)
-    const demoIds = new Set(["s1","s2","s3","s4","s5"]);
-    if (!demoIds.has(id)) storesApi.delete(id).catch(() => {});
     setDeleteId(null);
-    toast.success("تم حذف المتجر ومستخدميه");
+    // Delete from MongoDB
+    const demoIds = new Set(["s1","s2","s3","s4","s5"]);
+    if (!demoIds.has(id)) {
+      const r = await storesApi.delete(id).catch(() => ({ ok: false }));
+      if (!r.ok) toast.error("تم الحذف محلياً لكن فشل الحذف من السيرفر — سيرجع بعد المزامنة");
+      else toast.success("تم حذف المتجر نهائياً");
+    } else {
+      toast.success("تم حذف المتجر التجريبي");
+    }
   }
 
   async function saveStore(data: Partial<TenantStore>) {
@@ -618,6 +624,7 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
           store={viewCredsStore}
           users={Array.isArray(users) ? users.filter(u => u.storeSlug === viewCredsStore.slug && u.role !== "مالك المنصة") : []}
           onUpdateUser={updated => setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))}
+          onAddUser={newUser => setUsers(prev => [...prev, newUser])}
           onClose={() => setViewCredsStore(null)}
         />
       )}
@@ -760,14 +767,44 @@ function StoreFormModal({ store, plans, existingSlugs, onSave, onClose }: {
 }
 
 // ─── Store Credentials Modal ─────────────────────────────────────────────────
-function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
+function StoreCredsModal({ store, users, onUpdateUser, onAddUser, onClose }: {
   store: TenantStore;
   users: AppUser[];
   onUpdateUser: (u: AppUser) => void;
+  onAddUser?: (u: AppUser) => void;
   onClose: () => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ username: "", password: "", showPw: false });
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: store.ownerName || "", username: store.slug?.replace(/-/g,"").slice(0,10) || "admin", password: "", role: "مدير النظام" });
+  const [creating, setCreating] = useState(false);
+
+  async function createUser() {
+    if (!createForm.username || !createForm.password) { toast.error("اسم المستخدم وكلمة المرور مطلوبان"); return; }
+    setCreating(true);
+    try {
+      const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const token = localStorage.getItem("pos_token");
+      const r = await fetch(`${BASE}/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ name: createForm.name || createForm.username, email: `${createForm.username}@${store.slug}.pos`, username: createForm.username, password: createForm.password, role: createForm.role, storeSlug: store.slug, permissions: 8 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        const newUser = { id: d.data?._id || Date.now(), name: createForm.name || createForm.username, email: `${createForm.username}@${store.slug}.pos`, username: createForm.username, role: createForm.role, status: "نشط", lastLogin: "", permissions: 8, password: createForm.password, storeSlug: store.slug };
+        onAddUser?.(newUser);
+        toast.success(`✅ تم إنشاء المستخدم "${createForm.username}" وحفظه في السيرفر`);
+        setShowCreate(false);
+        setCreateForm({ name: store.ownerName || "", username: store.slug?.replace(/-/g,"").slice(0,10) || "admin", password: "", role: "مدير النظام" });
+      } else {
+        toast.error(d.message || "فشل إنشاء المستخدم");
+      }
+    } catch { toast.error("لا يوجد اتصال بالسيرفر"); }
+    setCreating(false);
+  }
 
   function startEdit(u: AppUser) {
     setEditingId(u.id);
@@ -795,13 +832,49 @@ function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
         </div>
 
         <div className="overflow-y-auto flex-1 p-5 space-y-3">
-          {users.length === 0 ? (
+          {/* Create user form */}
+          {showCreate && (
+            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold text-emerald-400">إنشاء مستخدم جديد للمتجر</p>
+              {[
+                { label: "الاسم", key: "name", placeholder: store.ownerName || "اسم المستخدم" },
+                { label: "اسم الدخول", key: "username", placeholder: "username" },
+                { label: "كلمة المرور", key: "password", placeholder: "6 أحرف على الأقل" },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-[10px] text-muted-foreground mb-1 block">{f.label}</label>
+                  <input value={(createForm as any)[f.key]} onChange={e => setCreateForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder} dir="ltr"
+                    className="w-full h-9 px-3 rounded-lg bg-foreground/5 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+                </div>
+              ))}
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">الدور</label>
+                <select value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value }))}
+                  className="w-full h-9 px-3 rounded-lg bg-foreground/5 border border-border text-sm text-foreground focus:outline-none">
+                  {["مدير النظام","مدير","كاشير","موظف مخزون"].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={createUser} disabled={creating}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-2 rounded-lg transition-all disabled:opacity-50">
+                  {creating ? "جاري الإنشاء..." : "إنشاء وحفظ"}
+                </button>
+                <button onClick={() => setShowCreate(false)} className="px-4 bg-foreground/10 text-foreground text-xs font-bold py-2 rounded-lg transition-all">إلغاء</button>
+              </div>
+            </div>
+          )}
+
+          {users.length === 0 && !showCreate ? (
             <div className="text-center py-8 text-muted-foreground space-y-3">
               <Key size={36} className="mx-auto opacity-20" />
               <p className="text-sm">لا يوجد مستخدمون لهذا المتجر</p>
-              <p className="text-xs text-amber-400">هذا المتجر أُنشئ قبل تفعيل المزامنة مع السيرفر.<br/>احذفه وأنشئه من جديد لحفظه في قاعدة البيانات.</p>
+              <button onClick={() => setShowCreate(true)}
+                className="mx-auto flex items-center gap-2 px-4 py-2 bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold hover:bg-emerald-500/25 transition-all">
+                <Plus size={13} /> إنشاء مستخدم الآن
+              </button>
             </div>
-          ) : users.map(u => (
+          ) : !showCreate && users.map(u => (
             <div key={u.id} className="rounded-xl border border-border bg-foreground/3 p-4 space-y-3">
               {/* Header row */}
               <div className="flex items-center gap-3">
@@ -883,7 +956,13 @@ function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
           ))}
         </div>
 
-        <div className="p-4 border-t border-border shrink-0">
+        <div className="p-4 border-t border-border shrink-0 space-y-2">
+          {!showCreate && (
+            <button onClick={() => setShowCreate(true)}
+              className="w-full py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-sm font-bold transition-all flex items-center justify-center gap-2">
+              <Plus size={14} /> إضافة مستخدم جديد
+            </button>
+          )}
           <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">إغلاق</button>
         </div>
       </div>
