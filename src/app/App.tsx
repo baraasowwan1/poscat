@@ -1694,7 +1694,10 @@ function SalesScreen({ sales, setSales, company, companyLogo }: { sales: Sale[];
 function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; setCustomers: (u: Customer[] | ((p: Customer[]) => Customer[])) => void }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [viewC, setViewC] = useState<Customer | null>(null);
+  const [editC, setEditC] = useState<Customer | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "" });
+  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "", city: "", status: "عادي" });
   const filtered = customers.filter(c => c.name.includes(search) || c.phone.includes(search) || c.email.includes(search));
 
   function addCustomer() {
@@ -1705,10 +1708,84 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
     setShowAdd(false);
     setForm({ name: "", phone: "", email: "", city: "" });
   }
+  function openEdit(c: Customer) {
+    setEditC(c);
+    setEditForm({ name: c.name, phone: c.phone, email: c.email, city: c.city, status: c.status });
+  }
+  function saveEdit() {
+    if (!editC) return;
+    setCustomers(prev => prev.map(c => c.id === editC.id ? { ...c, ...editForm } : c));
+    toast.success("تم تحديث بيانات العميل");
+    setEditC(null);
+  }
   function deleteCustomer(id: number) { setCustomers(prev => prev.filter(c => c.id !== id)); toast.success("تم حذف العميل"); }
 
   return (
     <div className="p-6 space-y-5">
+      {/* View Customer Modal */}
+      {viewC && (
+        <Modal title={`بيانات العميل — ${viewC.name}`} onClose={() => setViewC(null)}>
+          <div className="p-6 space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-2xl font-black">{viewC.name.charAt(0)}</div>
+              <div>
+                <h3 className="text-lg font-black text-foreground">{viewC.name}</h3>
+                <p className="text-sm text-muted-foreground">{viewC.email || "لا يوجد بريد"}</p>
+              </div>
+              {statusBadge(viewC.status)}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "الهاتف", val: viewC.phone || "—" },
+                { label: "المدينة", val: viewC.city || "—" },
+                { label: "إجمالي المشتريات", val: fmtCurrency(viewC.totalPurchases) },
+                { label: "عدد الزيارات", val: fmt(viewC.visits) },
+                { label: "نقاط الولاء", val: fmt(viewC.points) },
+                { label: "التصنيف", val: viewC.status },
+              ].map(({ label, val }) => (
+                <div key={label} className="bg-muted/30 rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+                  <p className="text-sm font-bold text-foreground">{val}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => { openEdit(viewC); setViewC(null); }} className="flex-1 border border-border text-muted-foreground py-2.5 rounded-xl font-bold hover:text-foreground transition-all flex items-center justify-center gap-2"><Edit2 size={15} /> تعديل</button>
+              <button onClick={() => setViewC(null)} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-bold transition-all">إغلاق</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Edit Customer Modal */}
+      {editC && (
+        <Modal title={`تعديل — ${editC.name}`} onClose={() => setEditC(null)}>
+          <div className="p-6 space-y-4">
+            {[
+              { label: "الاسم الكامل *", key: "name", placeholder: "أحمد محمد" },
+              { label: "رقم الهاتف *", key: "phone", placeholder: "079XXXXXXX" },
+              { label: "البريد الإلكتروني", key: "email", placeholder: "email@example.com" },
+              { label: "المدينة", key: "city", placeholder: "عمّان" },
+            ].map(({ label, key, placeholder }) => (
+              <div key={key}>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">{label}</label>
+                <input value={(editForm as any)[key]} onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))} placeholder={placeholder}
+                  className="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary" />
+              </div>
+            ))}
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">التصنيف</label>
+              <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary">
+                {["عادي","مميز","VIP"].map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={saveEdit} className="flex-1 bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"><Check size={15} /> حفظ التعديلات</button>
+              <button onClick={() => setEditC(null)} className="px-6 py-3 border border-border rounded-xl text-muted-foreground hover:text-foreground transition-all">إلغاء</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {showAdd && (
         <Modal title="إضافة عميل جديد" onClose={() => setShowAdd(false)}>
           <div className="p-6 space-y-4">
@@ -1770,8 +1847,8 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
                   <td className="px-5 py-4">{statusBadge(c.status)}</td>
                   <td className="px-5 py-4">
                     <div className="flex gap-1">
-                      <button onClick={() => toast.info(`سجل مشتريات: ${c.name}`)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all"><Eye size={15} /></button>
-                      <button onClick={() => toast.info("تعديل بيانات العميل")} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-amber-400 transition-all"><Edit2 size={15} /></button>
+                      <button onClick={() => setViewC(c)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all" title="عرض البيانات"><Eye size={15} /></button>
+                      <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-amber-400 transition-all" title="تعديل"><Edit2 size={15} /></button>
                       <button onClick={() => deleteCustomer(c.id)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-red-400 transition-all"><Trash2 size={15} /></button>
                     </div>
                   </td>
@@ -1789,7 +1866,10 @@ function CustomersScreen({ customers, setCustomers }: { customers: Customer[]; s
 function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Supplier[]; setSuppliers: (u: Supplier[] | ((p: Supplier[]) => Supplier[])) => void; purchases: Purchase[] }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [viewS, setViewS] = useState<Supplier | null>(null);
+  const [editS, setEditS] = useState<Supplier | null>(null);
   const [form, setForm] = useState({ name: "", contact: "", phone: "", email: "", city: "" });
+  const [editForm, setEditForm] = useState({ name: "", contact: "", phone: "", email: "", city: "" });
   const filtered = suppliers.filter(s => s.name.includes(search) || s.contact.includes(search) || s.phone.includes(search));
 
   function addSupplier() {
@@ -1799,10 +1879,65 @@ function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Su
     toast.success("تمت إضافة المورد بنجاح");
     setShowAdd(false); setForm({ name: "", contact: "", phone: "", email: "", city: "" });
   }
+  function openEditS(s: Supplier) { setEditS(s); setEditForm({ name: s.name, contact: s.contact, phone: s.phone, email: s.email, city: s.city }); }
+  function saveEditS() {
+    if (!editS) return;
+    setSuppliers(prev => prev.map(s => s.id === editS.id ? { ...s, ...editForm } : s));
+    toast.success("تم تحديث بيانات المورد");
+    setEditS(null);
+  }
   function deleteSupplier(id: number) { setSuppliers(prev => prev.filter(s => s.id !== id)); toast.success("تم حذف المورد"); }
 
   return (
     <div className="p-6 space-y-5">
+      {viewS && (
+        <Modal title={`ملف المورد — ${viewS.name}`} onClose={() => setViewS(null)}>
+          <div className="p-6 space-y-3">
+            {[
+              { label: "اسم الشركة", val: viewS.name },
+              { label: "مسؤول التواصل", val: viewS.contact || "—" },
+              { label: "الهاتف", val: viewS.phone || "—" },
+              { label: "البريد الإلكتروني", val: viewS.email || "—" },
+              { label: "المدينة", val: viewS.city || "—" },
+              { label: "الرصيد المستحق", val: fmtCurrency(viewS.balance) },
+              { label: "عدد المنتجات", val: String(viewS.products) },
+              { label: "الحالة", val: viewS.status },
+            ].map(({ label, val }) => (
+              <div key={label} className="flex justify-between py-2 border-b border-border last:border-0">
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <span className="text-sm font-bold text-foreground">{val}</span>
+              </div>
+            ))}
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => { openEditS(viewS); setViewS(null); }} className="flex-1 border border-border text-muted-foreground py-2.5 rounded-xl font-bold hover:text-foreground transition-all flex items-center justify-center gap-2"><Edit2 size={15} /> تعديل</button>
+              <button onClick={() => setViewS(null)} className="flex-1 bg-primary text-white py-2.5 rounded-xl font-bold transition-all">إغلاق</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {editS && (
+        <Modal title={`تعديل — ${editS.name}`} onClose={() => setEditS(null)}>
+          <div className="p-6 space-y-4">
+            {[
+              { label: "اسم الشركة *", key: "name" },
+              { label: "مسؤول التواصل", key: "contact" },
+              { label: "الهاتف", key: "phone" },
+              { label: "البريد الإلكتروني", key: "email" },
+              { label: "المدينة", key: "city" },
+            ].map(({ label, key }) => (
+              <div key={key}>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">{label}</label>
+                <input value={(editForm as any)[key]} onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                  className="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary" />
+              </div>
+            ))}
+            <div className="flex gap-3 pt-2">
+              <button onClick={saveEditS} className="flex-1 bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"><Check size={15} /> حفظ</button>
+              <button onClick={() => setEditS(null)} className="px-6 py-3 border border-border rounded-xl text-muted-foreground hover:text-foreground transition-all">إلغاء</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {showAdd && (
         <Modal title="إضافة مورد جديد" onClose={() => setShowAdd(false)}>
           <div className="p-6 space-y-4">
@@ -1865,8 +2000,8 @@ function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Su
                   <td className="px-5 py-4">{statusBadge(s.status)}</td>
                   <td className="px-5 py-4">
                     <div className="flex gap-1">
-                      <button onClick={() => toast.info(`ملف المورد: ${s.name}`)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all"><Eye size={15} /></button>
-                      <button onClick={() => toast.info("تعديل بيانات المورد")} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-amber-400 transition-all"><Edit2 size={15} /></button>
+                      <button onClick={() => setViewS(s)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all" title="عرض ملف المورد"><Eye size={15} /></button>
+                      <button onClick={() => openEditS(s)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-amber-400 transition-all" title="تعديل"><Edit2 size={15} /></button>
                       <button onClick={() => deleteSupplier(s.id)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-red-400 transition-all"><Trash2 size={15} /></button>
                     </div>
                   </td>
@@ -1884,12 +2019,13 @@ function SuppliersScreen({ suppliers, setSuppliers, purchases }: { suppliers: Su
 function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Purchase[]; setPurchases: (u: Purchase[] | ((p: Purchase[]) => Purchase[])) => void; suppliers: Supplier[] }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [viewPO, setViewPO] = useState<Purchase | null>(null);
   const [form, setForm] = useState({ supplier: "", items: "", total: "", notes: "" });
   const filtered = purchases.filter(p => p.id.includes(search) || p.supplier.includes(search));
 
   function createPO() {
     if (!form.supplier || !form.total) { toast.error("المورد والمبلغ مطلوبان"); return; }
-    const newPO: Purchase = { id: `PO-2024-0${bumpPO()}`, supplier: form.supplier, items: Number(form.items) || 1, total: Number(form.total), status: "بانتظار الموافقة", date: "5 يوليو 2026", received: false };
+    const newPO: Purchase = { id: `PO-2024-0${bumpPO()}`, supplier: form.supplier, items: Number(form.items) || 1, total: Number(form.total), status: "بانتظار الموافقة", date: new Date().toISOString().slice(0,10), received: false };
     setPurchases(prev => [newPO, ...prev]);
     toast.success(`تم إنشاء طلب الشراء ${newPO.id}`);
     setShowAdd(false); setForm({ supplier: "", items: "", total: "", notes: "" });
@@ -1909,6 +2045,27 @@ function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Pu
 
   return (
     <div className="p-6 space-y-5">
+      {viewPO && (
+        <Modal title={`تفاصيل ${viewPO.id}`} onClose={() => setViewPO(null)}>
+          <div className="p-6 space-y-3">
+            {[
+              { label: "رقم الطلب", val: viewPO.id },
+              { label: "المورد", val: viewPO.supplier },
+              { label: "عدد الأصناف", val: String(viewPO.items) },
+              { label: "الإجمالي", val: fmtCurrency(viewPO.total) },
+              { label: "التاريخ", val: viewPO.date },
+              { label: "الحالة", val: viewPO.status },
+              { label: "مستلم", val: viewPO.received ? "نعم ✓" : "لا" },
+            ].map(({ label, val }) => (
+              <div key={label} className="flex justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <span className="text-sm font-bold text-foreground">{val}</span>
+              </div>
+            ))}
+            <button onClick={() => setViewPO(null)} className="w-full mt-4 bg-primary text-white py-2.5 rounded-xl font-bold transition-all">إغلاق</button>
+          </div>
+        </Modal>
+      )}
       {showAdd && (
         <Modal title="طلب شراء جديد" onClose={() => setShowAdd(false)} wide>
           <div className="p-6 space-y-4">
@@ -1981,7 +2138,7 @@ function PurchasesScreen({ purchases, setPurchases, suppliers }: { purchases: Pu
                   <td className="px-5 py-3.5">{statusBadge(p.status)}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex gap-1.5">
-                      <button onClick={() => toast.info(`تفاصيل ${p.id}`)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all"><Eye size={14} /></button>
+                      <button onClick={() => setViewPO(p)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all" title="عرض التفاصيل"><Eye size={14} /></button>
                       {p.status === "بانتظار الموافقة" && (
                         <>
                           <button onClick={() => approvePO(p.id)} className="px-2.5 py-1.5 bg-emerald-500/15 text-emerald-400 rounded-lg text-xs font-semibold hover:bg-emerald-500/25 transition-all flex items-center gap-1"><Check size={12} /> موافقة</button>
@@ -3213,7 +3370,7 @@ export default function App({
             {screen === "platform-stores" && <PlatformStoresScreen stores={tenantStores} setStores={setTenantStores} plans={plans} onImpersonate={handleImpersonate} users={users} setUsers={setUsers} />}
             {screen === "platform-users" && <PlatformUsersScreen stores={tenantStores} users={users} setUsers={setUsers} />}
             {screen === "platform-plans" && <PlatformPlansScreen plans={plans} setPlans={setPlans} stores={tenantStores} />}
-            {screen === "platform-reports" && <PlatformReportsScreen stores={tenantStores} plans={plans} />}
+            {screen === "platform-reports" && <PlatformReportsScreen stores={tenantStores} plans={plans} users={users} />}
             {screen === "platform-audit" && <PlatformAuditScreen auditLogs={auditLogs} stores={tenantStores} />}
             {screen === "platform-settings" && <PlatformSettingsScreen />}
           </main>
