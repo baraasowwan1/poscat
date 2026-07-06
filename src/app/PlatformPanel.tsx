@@ -12,6 +12,7 @@ import type { Screen, AppUser, TenantStore, Plan, AuditLog } from "./types";
 import { generateSlug, PLATFORM_DOMAIN, storeLoginUrl } from "./types";
 import { StoreUrlCard } from "./StorePortal";
 import { storesApi, usersApi } from "../lib/useApiData";
+import { platformApi } from "../lib/apiClient";
 
 // Auto-generate store admin username from store name
 function makeUsername(storeName: string, existingUsernames: string[]): string {
@@ -299,12 +300,13 @@ export function PlatformDashboardScreen({ stores: storesProp, plans: plansProp, 
   );
 }
 
-export function PlatformStoresScreen({ stores: storesProp, setStores, plans: plansProp, onImpersonate, users, setUsers }: {
+export function PlatformStoresScreen({ stores: storesProp, setStores, plans: plansProp, onImpersonate, users, setUsers, onStoreDeleted }: {
   stores: TenantStore[];
   setStores: (u: TenantStore[] | ((p: TenantStore[]) => TenantStore[])) => void;
   plans: Plan[]; onImpersonate: (s: TenantStore) => void;
   users: AppUser[];
   setUsers: (u: AppUser[] | ((p: AppUser[]) => AppUser[])) => void;
+  onStoreDeleted?: (id: string) => void;
 }) {
   const stores = Array.isArray(storesProp) ? storesProp : [];
   const plans  = Array.isArray(plansProp)  ? plansProp  : [];
@@ -339,6 +341,8 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
 
   async function deleteStore(id: string) {
     const store = stores.find(s => s.id === id);
+    // Mark as deleted — prevents sync from re-adding
+    onStoreDeleted?.(id);
     // Remove from local state immediately
     setStores(prev => prev.filter(s => s.id !== id));
     if (store?.slug) setUsers(prev => prev.filter(u => u.storeSlug !== store.slug));
@@ -394,24 +398,26 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
       permissions: 8, password, storeSlug: slug,
     };
 
-    // Update local state immediately
-    setStores(prev => [newStore, ...prev]);
-    setUsers(prev => [...prev, adminUser]);
-    setNewCredentials({ storeName: data.name ?? "", username, password });
     setShowModal(false); setEditStore(null);
 
-    // Sync to MongoDB in background — update id to MongoDB _id on success
-    storesApi.create(newStore).then(r => {
-      if (r.ok && r.data?._id) {
-        setStores(prev => prev.map(s => s.id === newStore.id ? { ...s, id: r.data._id } : s));
-        toast.info(`✅ المتجر "${newStore.name}" حُفظ في قاعدة البيانات`);
-      } else {
-        toast.error(`⚠ المتجر موجود محلياً فقط — تأكد من الاتصال بالسيرفر`);
+    // Create store + admin user in one transaction via backend
+    try {
+      const r = await platformApi.createStore({
+        ...newStore,
+        adminUsername: username,
+        adminPassword: password,
+      });
+      if (r && r._id) {
+        const savedStore = { ...newStore, id: r._id };
+        const savedUser = { ...adminUser, id: r._id + "_user" };
+        setStores(prev => [savedStore, ...prev]);
+        setUsers(prev => [...prev, savedUser]);
+        setNewCredentials({ storeName: data.name ?? "", username, password });
+        toast.success(`✅ تم إنشاء المتجر "${newStore.name}" وحفظه في قاعدة البيانات`);
       }
-    }).catch(() => {
-      toast.error(`⚠ المتجر موجود محلياً فقط — تأكد من الاتصال بالسيرفر`);
-    });
-    usersApi.create({ ...adminUser, password }).catch(() => {});
+    } catch (err: any) {
+      toast.error(`فشل إنشاء المتجر: ${err.message || "تأكد من الاتصال بالسيرفر"}`);
+    }
   }
 
   return (
