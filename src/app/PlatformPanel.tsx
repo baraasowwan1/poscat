@@ -309,17 +309,18 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
   setUsers: (u: AppUser[] | ((p: AppUser[]) => AppUser[])) => void;
   onStoreDeleted?: (id: string) => void;
 }) {
-  // Live data from MongoDB — overrides any local state
-  const { data: liveStores } = useStores();
+  // Live data from MongoDB
+  const { data: liveStores, isLoading: storesLoading, error: storesError } = useStores();
   const { data: livePlans } = usePlans();
   const { data: liveUsers } = usePlatformUsers();
   const deleteStoreMutation = useDeleteStore();
   const toggleStoreMutation = useToggleStore();
 
-  // Use live MongoDB data when available, fall back to props
-  const stores = Array.isArray(liveStores) ? liveStores : (Array.isArray(storesProp) ? storesProp : []);
-  const plans  = Array.isArray(livePlans)  ? livePlans  : (Array.isArray(plansProp)  ? plansProp  : []);
-  const allUsers = Array.isArray(liveUsers) ? liveUsers : (Array.isArray(users) ? users : []);
+  // Normalize MongoDB response — API returns array directly or wrapped in data
+  const normalizeArr = (d: any) => Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+  const stores   = normalizeArr(liveStores).length   > 0 ? normalizeArr(liveStores)   : (Array.isArray(storesProp) ? storesProp : []);
+  const plans    = normalizeArr(livePlans).length    > 0 ? normalizeArr(livePlans)    : (Array.isArray(plansProp)  ? plansProp  : []);
+  const allUsers = normalizeArr(liveUsers).length > 0 ? normalizeArr(liveUsers) : (Array.isArray(users) ? users : []);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlan, setFilterPlan] = useState("all");
@@ -418,6 +419,21 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
       toast.error(`فشل إنشاء المتجر: ${err.message || "تأكد من الاتصال بالسيرفر"}`);
     }
   }
+
+  if (storesLoading) return (
+    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+      <RefreshCw size={32} className="animate-spin text-purple-400" />
+      <p className="text-sm">جاري تحميل المتاجر من السيرفر...</p>
+    </div>
+  );
+
+  if (storesError) return (
+    <div className="flex flex-col items-center justify-center h-64 text-red-400 gap-3">
+      <AlertCircle size={32} />
+      <p className="text-sm">تعذر تحميل المتاجر — {(storesError as any)?.message || "تأكد من الاتصال بالسيرفر"}</p>
+      <button onClick={() => window.location.reload()} className="text-xs text-purple-400 hover:underline">إعادة المحاولة</button>
+    </div>
+  );
 
   return (
     <div className="p-6 space-y-6">
