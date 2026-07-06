@@ -2661,13 +2661,11 @@ export default function App({
 
   // ── Persistent state — survives page reload ───────────────────────────────
   const [users, setUsers] = useState<AppUser[]>(() => {
-    const initialized = localStorage.getItem("sowwan_pos_users_init");
     const stored: AppUser[] = lsGet("users", []);
-    if (!initialized) {
-      try { localStorage.setItem("sowwan_pos_users_init", "1"); } catch {}
-      return INIT_USERS;
-    }
-    return stored;
+    // If localStorage already has users, use them (preserves user data)
+    if (stored.length > 0) return stored;
+    // First ever run — seed demo users
+    return INIT_USERS;
   });
 
   // ── Per-store isolated data ───────────────────────────────────────────────
@@ -2691,16 +2689,12 @@ export default function App({
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
-    // Use a separate flag to distinguish "never initialized" vs "user deleted all stores"
-    const initialized = localStorage.getItem("sowwan_pos_stores_init");
     const stored: TenantStore[] = lsGet("tenantStores", []);
-    if (!initialized) {
-      // First ever run — seed demo data and mark as initialized
-      try { localStorage.setItem("sowwan_pos_stores_init", "1"); } catch {}
-      return INIT_STORES;
-    }
-    // Trust localStorage — even if empty (user deleted all stores)
-    return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
+    // If localStorage already has stores, use them (preserves user-created stores)
+    if (stored.length > 0)
+      return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
+    // First ever run — seed demo stores
+    return INIT_STORES;
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -2715,14 +2709,6 @@ export default function App({
     root.classList.toggle("dark", isDark);
     root.classList.toggle("light", !isDark);
   }, [isDark]);
-
-  // ── On first mount: stamp init flags so existing users don't lose data ────
-  useEffect(() => {
-    if (!localStorage.getItem("sowwan_pos_stores_init"))
-      localStorage.setItem("sowwan_pos_stores_init", "1");
-    if (!localStorage.getItem("sowwan_pos_users_init"))
-      localStorage.setItem("sowwan_pos_users_init", "1");
-  }, []);
 
   // ── Auto-save to localStorage on every change ─────────────────────────────
   useEffect(() => { lsSet("users", users); }, [users]);
