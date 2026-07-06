@@ -346,7 +346,7 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
       id, customer: selectedCustomer || "عميل نقدي", cashier: "أحمد المدير",
       amount: total, items: cart.length, status: "مكتمل",
       time: nowDate.toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit" }),
-      date: nowDate.toLocaleDateString("ar-JO", { year: "numeric", month: "long", day: "numeric" }),
+      date: nowDate.toISOString().slice(0, 10), // YYYY-MM-DD — parseable for monthly charts
       method: paymentMethod,
       lineItems: cart.map(c => ({ productId: c.id, nameAr: c.nameAr, qty: c.qty, price: c.price })),
     };
