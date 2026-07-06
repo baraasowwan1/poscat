@@ -3,7 +3,7 @@
 export type StoreScreen =
   | "dashboard" | "pos" | "products" | "inventory"
   | "sales" | "customers" | "suppliers" | "purchases" | "expenses"
-  | "reports" | "users" | "settings";
+  | "reports" | "users" | "settings" | "appointments";
 
 export type PlatformScreen =
   | "platform-dashboard" | "platform-stores" | "platform-users"
