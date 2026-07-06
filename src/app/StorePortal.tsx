@@ -163,25 +163,71 @@ export function StoreLoginPage({
     ? new Date(store.trialEndsAt).getTime() < Date.now()
     : false;
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    // Block suspended stores
     if (store.status === "suspended") { setError("هذا المتجر معلق — يرجى التواصل مع الإدارة"); return; }
-    // Block expired trials
     if (trialExpired) { setError("انتهت فترة التجربة المجانية — يرجى التواصل مع الإدارة لتفعيل الاشتراك"); return; }
     if (!credential || !password) { setError("يرجى إدخال اسم المستخدم وكلمة المرور"); return; }
+    setLoading(true);
     const cred = credential.trim().toLowerCase();
+
+    // ── Try MongoDB API login first (works across all browsers/domains) ──────
+    try {
+      const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const r = await fetch(`${BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: cred.includes("@") ? undefined : cred,
+          email: cred.includes("@") ? cred : undefined,
+          password,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.token && d.user) {
+          // Verify user belongs to THIS store
+          if (d.user.storeSlug === store.slug) {
+            localStorage.setItem("pos_token", d.token);
+            setLoading(false);
+            onLogin({
+              id: d.user.id || d.user._id,
+              name: d.user.name, email: d.user.email,
+              username: d.user.username || cred,
+              role: d.user.role, status: "نشط",
+              lastLogin: new Date().toLocaleString("ar-JO"),
+              permissions: d.user.permissions ?? 3,
+              password: "", storeSlug: d.user.storeSlug || "",
+            });
+            return;
+          } else {
+            setLoading(false);
+            setError("اسم المستخدم غير موجود في هذا المتجر");
+            return;
+          }
+        }
+        // API found the issue (suspended, wrong password, etc.)
+        if (!d.success && d.message && !d.message.includes("غير صحيحة")) {
+          setLoading(false);
+          setError(d.message);
+          return;
+        }
+      }
+    } catch { /* offline — fallback to local */ }
+
+    // ── Fallback: local users (offline mode) ──────────────────────────────
     const found = storeUsers.find(u =>
       (u.username.toLowerCase() === cred || u.email.toLowerCase() === cred) &&
       u.password === password && u.status === "نشط"
     );
     if (!found) {
+      setLoading(false);
       setError(storeUsers.some(u => u.username.toLowerCase() === cred || u.email.toLowerCase() === cred)
         ? "كلمة المرور غير صحيحة" : "اسم المستخدم غير موجود في هذا المتجر");
       return;
     }
-    setLoading(true);
     setTimeout(() => { setLoading(false); onLogin(found); }, 800);
   }
 
