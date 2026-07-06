@@ -60,7 +60,18 @@ export const authApi = {
 // ─── Platform (SaaS Admin) ────────────────────────────────────────────────────
 export const platformApi = {
   getStores: () => request<any[]>("GET", "/platform/stores"),
-  createStore: (data: any) => request<any>("POST", "/platform/stores", data),
+  // createStore returns full response (store + adminCreated + adminUsername + adminError)
+  createStore: async (data: any): Promise<any> => {
+    const res = await fetch(`${BASE}/platform/stores`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15000),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new ApiError(res.status, json.message || `HTTP ${res.status}`);
+    return json; // return full response including adminCreated, adminUsername, adminError
+  },
   updateStore: (id: string, data: any) => request<any>("PUT", `/platform/stores/${id}`, data),
   deleteStore: (id: string) => request<void>("DELETE", `/platform/stores/${id}`),
   toggleStore: (id: string, status: string) => request<any>("PATCH", `/platform/stores/${id}/status`, { status }),
