@@ -3147,16 +3147,19 @@ export default function App({
   }
 
   // ── Persistent state — survives page reload ───────────────────────────────
+  // users — localStorage is source of truth, INIT_USERS as first-run seed
   const [users, setUsers] = useState<AppUser[]>(() => {
     const stored: AppUser[] = lsGet("users", []);
-    const platformOwner = INIT_USERS[0]; // superadmin is always index 0
     if (stored.length > 0) {
-      // Always ensure platform owner exists with correct password
-      const hasPlatformOwner = stored.some(u => u.role === "مالك المنصة" && u.password);
-      if (!hasPlatformOwner) return [platformOwner, ...stored.filter(u => u.role !== "مالك المنصة")];
+      // Ensure platform owner always has a password (might be wiped by sync)
+      const hasOwnerWithPw = stored.some(u => u.role === "مالك المنصة" && u.password);
+      if (!hasOwnerWithPw) {
+        const owner = INIT_USERS[0]; // superadmin
+        return [owner, ...stored.filter(u => u.role !== "مالك المنصة")];
+      }
       return stored;
     }
-    return INIT_USERS;
+    return INIT_USERS; // first ever run
   });
 
   // ── Per-store isolated data ───────────────────────────────────────────────
@@ -3176,15 +3179,14 @@ export default function App({
     lsGet("storeDataMap", {})
   );
 
-  // Platform stores — ALWAYS from MongoDB. localStorage = cache only.
-  // Never show INIT_STORES to platform admin — only real data.
+  // tenantStores — localStorage is source of truth, INIT_STORES as first-run seed
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
     const stored: TenantStore[] = lsGet("tenantStores", []);
-    // Filter out demo stores — only keep real stores (those created via API)
-    const realStores = stored.filter(s => !["s1","s2","s3","s4","s5"].includes(s.id));
-    return realStores.map(s => s.sector ? s : { ...s, sector: "supermarket" });
+    if (stored.length > 0)
+      return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
+    return INIT_STORES; // first ever run — show demo stores
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -3316,23 +3318,35 @@ export default function App({
       ]);
 
       let synced = 0;
-      // REPLACE with MongoDB data — no merge (prevents duplicates and ghost data)
-      if (storesRes?.data && Array.isArray(storesRes.data)) {
+      // MERGE MongoDB data with local — don't delete local items, only add missing ones
+      if (storesRes?.data && Array.isArray(storesRes.data) && storesRes.data.length > 0) {
         const dbStores = storesRes.data.map(mapDbStore);
-        // Deduplicate by storeId
-        const seen = new Set<string>();
-        const unique = dbStores.filter(s => { const k = s.storeId || s.id; return seen.has(k) ? false : (seen.add(k), true); });
-        setTenantStores(unique);
+        setTenantStores(prev => {
+          const localIds = new Set(prev.map(s => s.storeId));
+          const newFromDb = dbStores.filter(s => !localIds.has(s.storeId));
+          // Update existing + add new ones from DB
+          const updated = prev.map(s => {
+            const fromDb = dbStores.find(d => d.storeId === s.storeId);
+            return fromDb ? { ...s, ...fromDb } : s;
+          });
+          return [...updated, ...newFromDb];
+        });
         synced++;
       }
 
-      if (usersRes?.data && Array.isArray(usersRes.data)) {
+      if (usersRes?.data && Array.isArray(usersRes.data) && usersRes.data.length > 0) {
         const mapped = usersRes.data.map(mapDbUser);
-        // Keep local platform owner (with password), replace all others with MongoDB
         setUsers(prev => {
+          // Keep local platform owner with password, add missing DB users
           const localOwner = prev.find(u => u.role === "مالك المنصة" && u.password);
+          const localIds = new Set(prev.map(u => String(u.id)));
           const dbNonOwner = mapped.filter(u => u.role !== "مالك المنصة");
-          return localOwner ? [localOwner, ...dbNonOwner] : mapped;
+          const newFromDb = dbNonOwner.filter(u => !localIds.has(String(u.id)));
+          const updated = prev
+            .filter(u => u.role !== "مالك المنصة")
+            .map(u => { const fromDb = dbNonOwner.find(d => String(d.id) === String(u.id)); return fromDb ? { ...u, ...fromDb } : u; });
+          const base = localOwner ? [localOwner, ...updated] : updated;
+          return [...base, ...newFromDb];
         });
         synced++;
       }
@@ -3357,15 +3371,8 @@ export default function App({
     }
   }
 
-  useEffect(() => {
-    const savedUser = _initSession.user;
-    if (!savedUser || savedUser.role !== "مالك المنصة") return;
-    // Always try to sync from MongoDB on mount — clears any stale localStorage data
-    syncFromMongoDB(savedUser, false);
-    // Also re-sync every 5 minutes to stay fresh
-    const interval = setInterval(() => syncFromMongoDB(undefined, false), 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // No auto-sync on mount — sync only when user explicitly clicks the button
+  // This prevents overwriting local user actions with stale MongoDB data
 
   // ── Real audit log helper ─────────────────────────────────────────────────
   function addAuditLog(action: string, entity: string, entityId: string, details: string, storeId?: string) {
