@@ -1205,7 +1205,17 @@ function PlanEditForm({ plan, onSave, onClose }: { plan: Plan; onSave: (d: Parti
   );
 }
 
-export function PlatformReportsScreen({ stores: storesProp, plans: plansProp }: { stores: TenantStore[]; plans: Plan[] }) {
+function exportCSV(filename: string, rows: (string|number)[][], headers: string[]) {
+  const BOM = "﻿";
+  const csv = BOM + [headers, ...rows].map(r => r.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: filename });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  toast.success(`تم تصدير ${filename}`);
+}
+
+export function PlatformReportsScreen({ stores: storesProp, plans: plansProp, users }: { stores: TenantStore[]; plans: Plan[]; users?: any[] }) {
   const stores = Array.isArray(storesProp) ? storesProp : [];
   const plans  = Array.isArray(plansProp)  ? plansProp  : [];
   const totalMRR = plans.reduce((acc, p) => acc + p.price * stores.filter(s => s.planId === p.id && s.status === "active").length, 0);
@@ -1254,11 +1264,39 @@ export function PlatformReportsScreen({ stores: storesProp, plans: plansProp }: 
       <div className="card rounded-2xl border border-border p-5">
         <h3 className="font-black text-foreground mb-4">تصدير التقارير</h3>
         <div className="flex flex-wrap gap-3">
-          {["تقرير الاشتراكات", "تقرير المتاجر", "تقرير الإيرادات", "تقرير المستخدمين"].map(r => (
-            <button key={r} onClick={() => toast.info(`جاري تصدير: ${r}`)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">
-              <Download size={14} /> {r}
-            </button>
-          ))}
+          <button onClick={() => {
+            const rows = stores.map(s => [s.storeId, s.name, s.planId, s.status, s.subscriptionStatus || "", s.subscriptionEndsAt || "", s.trialEndsAt || ""]);
+            exportCSV("subscriptions-report.csv", rows, ["معرف المتجر","الاسم","الخطة","الحالة","حالة الاشتراك","ينتهي في","تجربة تنتهي"]);
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">
+            <Download size={14} /> تقرير الاشتراكات
+          </button>
+          <button onClick={() => {
+            const rows = stores.map(s => [s.name, s.ownerName, s.email, s.phone, s.sector || "supermarket", s.status, s.usersCount, s.productsCount, s.totalSales, s.createdAt]);
+            exportCSV("stores-report.csv", rows, ["المتجر","المالك","البريد","الهاتف","القطاع","الحالة","المستخدمون","المنتجات","المبيعات","تاريخ الإنشاء"]);
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">
+            <Download size={14} /> تقرير المتاجر
+          </button>
+          <button onClick={() => {
+            const totalMRR = plans.reduce((acc, p) => acc + p.price * stores.filter(s => s.planId === p.id && s.status === "active").length, 0);
+            const rows = [
+              ["إجمالي المتاجر", stores.length],
+              ["المتاجر النشطة", stores.filter(s => s.status === "active").length],
+              ["تجريبية", stores.filter(s => s.status === "trial").length],
+              ["إيرادات شهرية متوقعة (JOD)", totalMRR],
+              ["إجمالي المبيعات (JOD)", stores.reduce((a, s) => a + s.totalSales, 0)],
+            ];
+            exportCSV("revenue-report.csv", rows as any, ["البند","القيمة"]);
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">
+            <Download size={14} /> تقرير الإيرادات
+          </button>
+          <button onClick={() => {
+            exportCSV("users-report.csv",
+              (Array.isArray(users) ? users : []).filter(u => u.role !== "مالك المنصة").map(u => [u.name, u.username, u.email, u.role, u.status, u.storeSlug || "—", u.lastLogin || "لم يسجل"]),
+              ["الاسم","اسم الدخول","البريد","الدور","الحالة","المتجر","آخر دخول"]
+            );
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-bold transition-all">
+            <Download size={14} /> تقرير المستخدمين
+          </button>
         </div>
       </div>
     </div>
@@ -1391,11 +1429,44 @@ export function PlatformSettingsScreen() {
       <div className="mt-6 card rounded-2xl border border-red-500/20 p-6 bg-red-500/5">
         <h3 className="font-black text-red-400 text-lg mb-4 flex items-center gap-2"><AlertCircle size={18} /> منطقة الخطر</h3>
         <div className="space-y-3">
-          {["إعادة تعيين جميع بيانات المنصة", "حذف جميع المتاجر المعلقة", "تصدير نسخة احتياطية كاملة"].map(action => (
-            <button key={action} onClick={() => toast.info(`${action} — تحتاج إلى تأكيد إضافي`)} className="w-full text-right px-4 py-3 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-sm font-bold transition-all">
-              {action}
-            </button>
-          ))}
+          {/* Export full backup */}
+          <button onClick={() => {
+            const data: Record<string, any> = {};
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i)!;
+              if (k.startsWith("sowwan")) try { data[k] = JSON.parse(localStorage.getItem(k)!); } catch { data[k] = localStorage.getItem(k); }
+            }
+            const blob = new Blob([JSON.stringify({ timestamp: new Date().toISOString(), data }, null, 2)], { type: "application/json" });
+            const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `platform-backup-${new Date().toISOString().slice(0,10)}.json` });
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            toast.success("تم تصدير النسخة الاحتياطية الكاملة");
+          }} className="w-full text-right px-4 py-3 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-sm font-bold transition-all">
+            تصدير نسخة احتياطية كاملة
+          </button>
+          {/* Delete suspended stores */}
+          <button onClick={() => {
+            if (!window.confirm("هل تريد حذف جميع المتاجر المعلقة؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+            const suspended = stores.filter(s => s.status === "suspended");
+            suspended.forEach(s => storesApi.delete(s.id).catch(() => {}));
+            toast.success(`تم حذف ${suspended.length} متجر معلق`);
+          }} className="w-full text-right px-4 py-3 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-sm font-bold transition-all">
+            حذف جميع المتاجر المعلقة ({stores.filter(s => s.status === "suspended").length})
+          </button>
+          {/* Reset platform */}
+          <button onClick={() => {
+            if (!window.confirm("⚠ تحذير: سيتم مسح جميع بيانات المنصة من localStorage. هذا الإجراء لا يمكن التراجع عنه!")) return;
+            if (!window.confirm("هل أنت متأكد تماماً؟ اكتب 'نعم' في رسالة التأكيد")) return;
+            const keysToDelete = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i)!;
+              if (k.startsWith("sowwan_pos_")) keysToDelete.push(k);
+            }
+            keysToDelete.forEach(k => localStorage.removeItem(k));
+            toast.success("تمت إعادة تعيين جميع بيانات المنصة — يرجى إعادة تحميل الصفحة");
+            setTimeout(() => window.location.reload(), 1500);
+          }} className="w-full text-right px-4 py-3 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-sm font-bold transition-all">
+            إعادة تعيين جميع بيانات المنصة
+          </button>
         </div>
       </div>
     </div>
