@@ -3138,9 +3138,13 @@ export default function App({
   // ── Persistent state — survives page reload ───────────────────────────────
   const [users, setUsers] = useState<AppUser[]>(() => {
     const stored: AppUser[] = lsGet("users", []);
-    // If localStorage already has users, use them (preserves user data)
-    if (stored.length > 0) return stored;
-    // First ever run — seed demo users
+    const platformOwner = INIT_USERS[0]; // superadmin is always index 0
+    if (stored.length > 0) {
+      // Always ensure platform owner exists with correct password
+      const hasPlatformOwner = stored.some(u => u.role === "مالك المنصة" && u.password);
+      if (!hasPlatformOwner) return [platformOwner, ...stored.filter(u => u.role !== "مالك المنصة")];
+      return stored;
+    }
     return INIT_USERS;
   });
 
