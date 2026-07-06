@@ -135,9 +135,11 @@ ${itemRows}
 }
 
 // ─── POS Screen ───────────────────────────────────────────────────────────────
-export function POSScreen({ onSaleComplete, products, payments, company, companyLogo }: {
+export function POSScreen({ onSaleComplete, products, payments, company, companyLogo, customers, onCustomerUpdate }: {
   onSaleComplete: (sale: Sale) => void; products: Product[];
   payments: PaymentMethod[]; company: CompanyInfo; companyLogo: string;
+  customers?: Customer[];
+  onCustomerUpdate?: (id: number, updates: Partial<Customer>) => void;
 }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQ, setSearchQ] = useState("");
@@ -145,6 +147,9 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
   const [paymentStep, setPaymentStep] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("نقدي");
   const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [cashGiven, setCashGiven] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastInvoiceId, setLastInvoiceId] = useState("");
@@ -346,11 +351,22 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
       id, customer: selectedCustomer || "عميل نقدي", cashier: "أحمد المدير",
       amount: total, items: cart.length, status: "مكتمل",
       time: nowDate.toLocaleTimeString("ar-JO", { hour: "2-digit", minute: "2-digit" }),
-      date: nowDate.toISOString().slice(0, 10), // YYYY-MM-DD — parseable for monthly charts
+      date: nowDate.toISOString().slice(0, 10),
       method: paymentMethod,
       lineItems: cart.map(c => ({ productId: c.id, nameAr: c.nameAr, qty: c.qty, price: c.price })),
     };
     onSaleComplete(newSale);
+
+    // Update linked customer stats
+    if (selectedCustomerId && onCustomerUpdate) {
+      const loyaltyPoints = Math.floor(total);
+      onCustomerUpdate(selectedCustomerId, {
+        totalPurchases: (customers?.find(c => c.id === selectedCustomerId)?.totalPurchases ?? 0) + total,
+        visits: (customers?.find(c => c.id === selectedCustomerId)?.visits ?? 0) + 1,
+        points: (customers?.find(c => c.id === selectedCustomerId)?.points ?? 0) + loyaltyPoints,
+      });
+    }
+
     toast.success(`تمت عملية البيع بنجاح — ${id}`);
     openCashDrawer(true); // auto-open cash drawer silently
     setPaymentStep(false);
@@ -371,7 +387,7 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
   if (showReceipt) {
     return (
       <div className="flex h-[calc(100vh-65px)] items-center justify-center bg-background p-6">
-        <ReceiptModal cart={cart} total={total} subtotal={subtotal} tax={tax} paymentMethod={paymentMethod} invoiceId={lastInvoiceId} customer={selectedCustomer} company={company} logo={companyLogo} onClose={() => { setShowReceipt(false); setCart([]); setSelectedCustomer(""); setCashGiven(""); }} />
+        <ReceiptModal cart={cart} total={total} subtotal={subtotal} tax={tax} paymentMethod={paymentMethod} invoiceId={lastInvoiceId} customer={selectedCustomer} company={company} logo={companyLogo} onClose={() => { setShowReceipt(false); setCart([]); setSelectedCustomer(""); setSelectedCustomerId(null); setCustomerSearch(""); setCashGiven(""); }} />
       </div>
     );
   }
@@ -536,11 +552,69 @@ export function POSScreen({ onSaleComplete, products, payments, company, company
             </h3>
             {cart.length > 0 && <button onClick={() => { setCart([]); }} className="text-xs text-red-400 hover:underline">مسح الكل</button>}
           </div>
+          {/* Customer selector */}
           <div className="relative mt-3">
-            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)}
-              placeholder="ابحث عن عميل أو اتركه فارغاً..." className="w-full bg-input-background border border-border rounded-xl pr-8 pl-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary" />
+            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground z-10" />
+            <input
+              value={selectedCustomerId ? selectedCustomer : customerSearch}
+              onChange={e => {
+                setCustomerSearch(e.target.value);
+                setSelectedCustomerId(null);
+                setSelectedCustomer(e.target.value);
+                setShowCustomerDropdown(true);
+              }}
+              onFocus={() => setShowCustomerDropdown(true)}
+              onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+              placeholder="ابحث عن عميل أو اتركه فارغاً..."
+              className="w-full bg-input-background border border-border rounded-xl pr-8 pl-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+            />
+            {selectedCustomerId && (
+              <button onClick={() => { setSelectedCustomerId(null); setSelectedCustomer(""); setCustomerSearch(""); }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-red-400 transition-colors">
+                <X size={13} />
+              </button>
+            )}
+            {showCustomerDropdown && customers && customers.length > 0 && (() => {
+              const q = customerSearch.toLowerCase();
+              const matches = customers.filter(c =>
+                !q || c.name.includes(customerSearch) || c.phone.includes(customerSearch)
+              ).slice(0, 6);
+              if (!matches.length) return null;
+              return (
+                <div className="absolute top-full right-0 left-0 mt-1 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                  {matches.map(c => (
+                    <button key={c.id} onMouseDown={() => {
+                      setSelectedCustomer(c.name);
+                      setSelectedCustomerId(c.id);
+                      setCustomerSearch(c.name);
+                      setShowCustomerDropdown(false);
+                    }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 transition-all text-right">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{c.name}</p>
+                        {c.phone && <p className="text-xs text-muted-foreground font-mono" dir="ltr">{c.phone}</p>}
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded-full">{c.points} نقطة</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
+          {selectedCustomerId && (() => {
+            const c = customers?.find(x => x.id === selectedCustomerId);
+            if (!c) return null;
+            return (
+              <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/20 rounded-xl">
+                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">{c.name.charAt(0)}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-foreground truncate">{c.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{c.visits} زيارة · {c.points} نقطة ولاء</p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-hide">
           {cart.length === 0 ? (
