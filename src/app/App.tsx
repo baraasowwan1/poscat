@@ -1,4 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// Single QueryClient instance — shared across the whole app
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 10_000, refetchOnWindowFocus: true } },
+});
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Truck, BarChart3,
   Settings, LogOut, Search, Bell, Moon, Sun, ChevronDown, Plus,
@@ -3121,7 +3127,7 @@ interface AppProps {
   onPlatformLogout?: () => void;
 }
 
-export default function App({
+function AppInner({
   initialStoreSlug,
   initialUser,
   onLogout: externalLogout,
@@ -3784,5 +3790,13 @@ export default function App({
       </div>
     </div>
     </SectorProvider>
+  );
+}
+
+export default function App(props: AppProps) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppInner {...props} />
+    </QueryClientProvider>
   );
 }
