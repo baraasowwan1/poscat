@@ -3166,16 +3166,16 @@ export default function App({
     lsGet("storeDataMap", {})
   );
 
-  // SaaS — always local; persisted in localStorage
+  // SaaS stores — MongoDB is primary. localStorage is just a session cache.
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
     const stored: TenantStore[] = lsGet("tenantStores", []);
-    // If localStorage already has stores, use them (preserves user-created stores)
     if (stored.length > 0)
       return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
-    // First ever run — seed demo stores
-    return INIT_STORES;
+    // Only load INIT_STORES if no token exists (first-time demo experience)
+    const hasToken = !!localStorage.getItem("pos_token");
+    return hasToken ? [] : INIT_STORES;
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -3402,8 +3402,8 @@ export default function App({
     setAuditLogs(prev => [loginLog, ...prev].slice(0, 500));
     if (user.role === "مالك المنصة") {
       setScreen("platform-dashboard");
-      // Sync immediately from MongoDB (with token re-auth if needed)
-      setTimeout(() => syncFromMongoDB(user), 500);
+      // Auto-sync from MongoDB silently — no user action needed
+      setTimeout(() => syncFromMongoDB(user, false), 800);
     } else {
       setScreen("dashboard");
     }
