@@ -9,6 +9,7 @@ import {
   ChevronLeft, QrCode, Scan, Archive, AlertCircle, CheckCircle2,
   Hash, Tag, Phone, Mail, MapPin, Repeat, Globe, Crown, Store, Activity,
   ToggleLeft, ToggleRight, Layers, BadgeCheck, Ban, ExternalLink, Banknote, CreditCard, Smartphone, Gift, ArrowRight,
+  CalendarDays, Clock, Scissors,
 } from "lucide-react";
 import {
   PieChart as RechartsPie, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -98,9 +99,9 @@ const categoryData = [
 
 const ROLE_SCREENS: Record<string, Screen[]> = {
   "مالك المنصة": ["platform-dashboard","platform-stores","platform-users","platform-plans","platform-reports","platform-settings","platform-audit"],
-  "مدير النظام": ["dashboard","pos","products","inventory","sales","purchases","customers","suppliers","expenses","reports","users","settings"],
-  "مدير":        ["dashboard","pos","products","inventory","sales","purchases","customers","suppliers","expenses","reports"],
-  "كاشير":       ["dashboard","pos","sales","customers"],
+  "مدير النظام": ["dashboard","pos","products","inventory","sales","purchases","customers","suppliers","expenses","reports","users","settings","appointments"],
+  "مدير":        ["dashboard","pos","products","inventory","sales","purchases","customers","suppliers","expenses","reports","appointments"],
+  "كاشير":       ["dashboard","pos","sales","customers","appointments"],
   "موظف مخزون":  ["dashboard","products","inventory","purchases","suppliers"],
 };
 
@@ -452,18 +453,19 @@ function Sidebar({ screen, setScreen, collapsed, setCollapsed, isDark, toggleThe
 
   // Dynamic nav labels based on active sector
   const sectorNavItems = [
-    { id: "dashboard" as Screen, label: "لوحة التحكم",   icon: LayoutDashboard },
-    { id: "pos" as Screen,       label: lbl.navPOS,        icon: ShoppingCart },
-    { id: "products" as Screen,  label: lbl.navProducts,   icon: Package },
-    { id: "inventory" as Screen, label: lbl.navInventory,  icon: Warehouse },
-    { id: "sales" as Screen,     label: "المبيعات",          icon: Receipt },
-    { id: "purchases" as Screen, label: lbl.navPurchases,  icon: ShoppingBag },
-    { id: "customers" as Screen, label: lbl.navCustomers,  icon: Users },
-    { id: "suppliers" as Screen, label: lbl.navSuppliers,  icon: Truck },
-    { id: "expenses" as Screen,  label: "المصاريف",          icon: DollarSign },
-    { id: "reports" as Screen,   label: "التقارير",           icon: BarChart3 },
-    { id: "users" as Screen,     label: "المستخدمون",         icon: UserCheck },
-    { id: "settings" as Screen,  label: "الإعدادات",          icon: Settings },
+    { id: "dashboard" as Screen,     label: "لوحة التحكم",  icon: LayoutDashboard },
+    { id: "pos" as Screen,           label: lbl.navPOS,       icon: ShoppingCart },
+    ...(sectorCfg.modules.appointments ? [{ id: "appointments" as Screen, label: "الحجوزات", icon: CalendarDays }] : []),
+    { id: "products" as Screen,      label: lbl.navProducts,  icon: Package },
+    { id: "inventory" as Screen,     label: lbl.navInventory, icon: Warehouse },
+    { id: "sales" as Screen,         label: "المبيعات",         icon: Receipt },
+    { id: "purchases" as Screen,     label: lbl.navPurchases, icon: ShoppingBag },
+    { id: "customers" as Screen,     label: lbl.navCustomers, icon: Users },
+    { id: "suppliers" as Screen,     label: lbl.navSuppliers, icon: Truck },
+    { id: "expenses" as Screen,      label: "المصاريف",         icon: DollarSign },
+    { id: "reports" as Screen,       label: "التقارير",          icon: BarChart3 },
+    { id: "users" as Screen,         label: "المستخدمون",        icon: UserCheck },
+    { id: "settings" as Screen,      label: "الإعدادات",         icon: Settings },
   ].filter(({ id }) => !(sectorCfg.hiddenModules ?? []).includes(id as any));
 
   return (
@@ -2377,6 +2379,251 @@ function InventoryScreen({ products, setProducts }: { products: Product[]; setPr
   );
 }
 
+// ─── Appointments Screen ──────────────────────────────────────────────────────
+interface Appointment {
+  id: string; customer: string; phone: string; service: string;
+  specialist: string; date: string; time: string; duration: number;
+  status: "مؤكد" | "بانتظار التأكيد" | "مكتمل" | "ملغى"; notes: string;
+}
+
+const APPT_SERVICES = ["حلاقة رجالي","حلاقة نسائي","صبغة شعر","كيراتين","مانيكير","باديكير","عناية بالبشرة","رموش","مساج","تصفيف شعر","أخرى"];
+const APPT_TIMES = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"];
+
+function AppointmentsScreen({ storeSlug }: { storeSlug: string }) {
+  const LS_KEY = `sowwan_pos_appts_${storeSlug}`;
+  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+  });
+  const [showAdd, setShowAdd] = useState(false);
+  const [editAppt, setEditAppt] = useState<Appointment | null>(null);
+  const [filter, setFilter] = useState<"الكل" | "مؤكد" | "بانتظار التأكيد" | "مكتمل" | "ملغى">("الكل");
+  const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
+
+  const emptyForm = { customer: "", phone: "", service: APPT_SERVICES[0], specialist: "", date: new Date().toISOString().slice(0, 10), time: "10:00", duration: 60, status: "بانتظار التأكيد" as const, notes: "" };
+  const [form, setForm] = useState(emptyForm);
+  const f = (k: keyof typeof form, v: any) => setForm(p => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(appointments)); } catch {}
+  }, [appointments, LS_KEY]);
+
+  function saveAppt() {
+    if (!form.customer.trim()) { toast.error("اسم العميل مطلوب"); return; }
+    if (!form.date || !form.time) { toast.error("التاريخ والوقت مطلوبان"); return; }
+    if (editAppt) {
+      setAppointments(prev => prev.map(a => a.id === editAppt.id ? { ...editAppt, ...form } : a));
+      toast.success("تم تعديل الحجز");
+    } else {
+      const newA: Appointment = { id: `APT-${Date.now()}`, ...form };
+      setAppointments(prev => [newA, ...prev]);
+      toast.success("تم إضافة الحجز بنجاح");
+    }
+    setShowAdd(false); setEditAppt(null); setForm(emptyForm);
+  }
+
+  function deleteAppt(id: string) {
+    setAppointments(prev => prev.filter(a => a.id !== id));
+    toast.success("تم حذف الحجز");
+  }
+  function changeStatus(id: string, status: Appointment["status"]) {
+    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+  }
+
+  const filtered = appointments.filter(a =>
+    (filter === "الكل" || a.status === filter) &&
+    (!dateFilter || a.date === dateFilter)
+  ).sort((a, b) => `${a.date}${a.time}` < `${b.date}${b.time}` ? -1 : 1);
+
+  const statusColor: Record<string, string> = {
+    "مؤكد": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+    "بانتظار التأكيد": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+    "مكتمل": "bg-blue-500/15 text-blue-400 border-blue-500/20",
+    "ملغى": "bg-red-500/15 text-red-400 border-red-500/20",
+  };
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayCount = appointments.filter(a => a.date === todayStr && a.status !== "ملغى").length;
+  const confirmedCount = appointments.filter(a => a.status === "مؤكد").length;
+  const pendingCount = appointments.filter(a => a.status === "بانتظار التأكيد").length;
+
+  const inputCls = "w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary";
+
+  return (
+    <div className="p-6 space-y-5">
+      {showAdd && (
+        <Modal title={editAppt ? "تعديل الحجز" : "حجز موعد جديد"} onClose={() => { setShowAdd(false); setEditAppt(null); setForm(emptyForm); }} wide>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">اسم العميل *</label>
+                  <input value={form.customer} onChange={e => f("customer", e.target.value)} placeholder="محمد أحمد" className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">رقم الهاتف</label>
+                  <input value={form.phone} onChange={e => f("phone", e.target.value)} placeholder="07XXXXXXXX" dir="ltr" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">الخدمة *</label>
+                <select value={form.service} onChange={e => f("service", e.target.value)} className={inputCls}>
+                  {APPT_SERVICES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">المختص</label>
+                <input value={form.specialist} onChange={e => f("specialist", e.target.value)} placeholder="اسم الحلاق/الكوافير" className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">التاريخ *</label>
+                <input type="date" value={form.date} onChange={e => f("date", e.target.value)} className={inputCls} dir="ltr" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">الوقت *</label>
+                <select value={form.time} onChange={e => f("time", e.target.value)} className={inputCls} dir="ltr">
+                  {APPT_TIMES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">المدة (دقيقة)</label>
+                <select value={form.duration} onChange={e => f("duration", Number(e.target.value))} className={inputCls}>
+                  {[30,45,60,90,120,180].map(d => <option key={d} value={d}>{d} دقيقة</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">الحالة</label>
+                <select value={form.status} onChange={e => f("status", e.target.value)} className={inputCls}>
+                  {["مؤكد","بانتظار التأكيد","مكتمل","ملغى"].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">ملاحظات</label>
+                <input value={form.notes} onChange={e => f("notes", e.target.value)} placeholder="أي تفاصيل إضافية..." className={inputCls} />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={saveAppt} className="flex-1 bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2">
+                <Check size={16} /> {editAppt ? "حفظ التعديلات" : "تأكيد الحجز"}
+              </button>
+              <button onClick={() => { setShowAdd(false); setEditAppt(null); }} className="px-6 py-3 border border-border rounded-xl text-muted-foreground hover:text-foreground transition-all">إلغاء</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard title="حجوزات اليوم" value={fmt(todayCount)} sub={new Date().toLocaleDateString("ar-JO",{weekday:"long"})} icon={CalendarDays} color="bg-primary" />
+        <KPICard title="مؤكدة" value={fmt(confirmedCount)} sub="جاهزة للخدمة" icon={CheckCircle2} color="bg-emerald-500" />
+        <KPICard title="بانتظار التأكيد" value={fmt(pendingCount)} sub="تحتاج مراجعة" icon={Clock} color="bg-amber-500" />
+        <KPICard title="إجمالي الحجوزات" value={fmt(appointments.length)} sub="كل الأوقات" icon={Scissors} color="bg-purple-500" />
+      </div>
+
+      {/* Filters + Add */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+          className="h-10 px-3 rounded-xl bg-foreground/5 border border-border text-sm text-foreground focus:outline-none" dir="ltr" />
+        <div className="flex gap-1 bg-muted rounded-xl p-1">
+          {(["الكل","مؤكد","بانتظار التأكيد","مكتمل","ملغى"] as const).map(s => (
+            <button key={s} onClick={() => setFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${filter === s ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setDateFilter("")} className="text-xs text-muted-foreground hover:text-foreground transition-all">مسح التاريخ</button>
+        <div className="mr-auto flex gap-2">
+          <button onClick={() => {
+            const rows = filtered.map(a =>
+              `<tr>
+                <td>${a.time}</td>
+                <td>${a.customer}</td>
+                <td>${a.phone || "—"}</td>
+                <td>${a.service}</td>
+                <td>${a.specialist || "—"}</td>
+                <td>${a.duration} د</td>
+                <td>${a.status}</td>
+                <td>${a.notes || "—"}</td>
+              </tr>`
+            ).join("");
+            const dateLabel = dateFilter
+              ? new Date(dateFilter).toLocaleDateString("ar-JO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+              : "جميع التواريخ";
+            printHTMLPage(`
+              <h1>جدول الحجوزات</h1>
+              <h2>${dateLabel} — ${filtered.length} حجز</h2>
+              <table>
+                <thead><tr><th>الوقت</th><th>العميل</th><th>الهاتف</th><th>الخدمة</th><th>المختص</th><th>المدة</th><th>الحالة</th><th>ملاحظات</th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            `, "جدول الحجوزات — SOWWAN POS");
+          }} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground transition-all">
+            <Printer size={15} /> طباعة
+          </button>
+          <button onClick={() => { setEditAppt(null); setForm(emptyForm); setShowAdd(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg">
+            <Plus size={15} /> حجز موعد جديد
+          </button>
+        </div>
+      </div>
+
+      {/* Appointments list */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground bg-card border border-border rounded-2xl">
+          <CalendarDays size={48} className="mx-auto mb-3 opacity-20" />
+          <p className="text-sm">لا توجد حجوزات {dateFilter ? `في ${new Date(dateFilter).toLocaleDateString("ar-JO",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}` : ""}</p>
+          <button onClick={() => { setForm(emptyForm); setShowAdd(true); }} className="mt-4 text-primary text-sm hover:underline">أضف أول حجز</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(a => (
+            <div key={a.id} className="bg-card border border-border rounded-2xl p-4 flex items-start gap-4 hover:border-primary/30 transition-all">
+              {/* Time block */}
+              <div className="flex flex-col items-center justify-center bg-primary/10 rounded-xl px-4 py-3 min-w-[72px] shrink-0">
+                <span className="text-lg font-black text-primary" dir="ltr">{a.time}</span>
+                <span className="text-[10px] text-muted-foreground mt-0.5">{a.duration} د</span>
+              </div>
+              {/* Details */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <p className="font-bold text-foreground">{a.customer}</p>
+                  {a.phone && <span className="text-xs text-muted-foreground font-mono" dir="ltr">{a.phone}</span>}
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${statusColor[a.status]}`}>{a.status}</span>
+                </div>
+                <div className="flex gap-3 flex-wrap text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><Scissors size={11} /> {a.service}</span>
+                  {a.specialist && <span className="flex items-center gap-1"><UserCheck size={11} /> {a.specialist}</span>}
+                  <span className="flex items-center gap-1"><CalendarDays size={11} /> {new Date(a.date).toLocaleDateString("ar-JO",{weekday:"short",month:"short",day:"numeric"})}</span>
+                </div>
+                {a.notes && <p className="text-xs text-muted-foreground mt-1 italic">"{a.notes}"</p>}
+              </div>
+              {/* Actions */}
+              <div className="flex flex-col gap-1 shrink-0">
+                <div className="flex gap-1">
+                  {a.status === "بانتظار التأكيد" && (
+                    <button onClick={() => changeStatus(a.id, "مؤكد")}
+                      className="px-2.5 py-1.5 bg-emerald-500/15 text-emerald-400 rounded-lg text-xs font-semibold hover:bg-emerald-500/25 transition-all">تأكيد</button>
+                  )}
+                  {(a.status === "مؤكد" || a.status === "بانتظار التأكيد") && (
+                    <button onClick={() => changeStatus(a.id, "مكتمل")}
+                      className="px-2.5 py-1.5 bg-blue-500/15 text-blue-400 rounded-lg text-xs font-semibold hover:bg-blue-500/25 transition-all">إتمام</button>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => { setEditAppt(a); setForm({ customer: a.customer, phone: a.phone, service: a.service, specialist: a.specialist, date: a.date, time: a.time, duration: a.duration, status: a.status, notes: a.notes }); setShowAdd(true); }}
+                    className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all"><Edit2 size={14} /></button>
+                  <button onClick={() => deleteAppt(a.id)}
+                    className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Users Screen ─────────────────────────────────────────────────────────────
 function UsersScreen({ users, setUsers, currentUserId, currentUserSlug }: { users: AppUser[]; setUsers: (u: AppUser[] | ((p: AppUser[]) => AppUser[])) => void; currentUserId: number; currentUserSlug?: string }) {
   const rolePerms: Record<string, number> = { "مدير النظام": 8, "مدير": 6, "كاشير": 3, "موظف مخزون": 2 };
@@ -2615,7 +2862,7 @@ const screenTitles: Record<Screen, string> = {
   login: "", dashboard: "لوحة التحكم", pos: "نقطة البيع",
   products: "المنتجات", inventory: "المخزون", sales: "المبيعات",
   purchases: "المشتريات", customers: "العملاء", suppliers: "الموردون",
-  expenses: "المصاريف", reports: "التقارير", users: "المستخدمون", settings: "الإعدادات",
+  expenses: "المصاريف", reports: "التقارير", users: "المستخدمون", settings: "الإعدادات", appointments: "الحجوزات",
   "platform-dashboard": "لوحة تحكم المنصة", "platform-stores": "المتاجر", "platform-users": "المستخدمون",
   "platform-plans": "الخطط والباقات", "platform-reports": "التقارير العامة", "platform-settings": "إعدادات المنصة", "platform-audit": "سجل التدقيق",
 };
@@ -2989,6 +3236,7 @@ export default function App({
       case "expenses": return <ExpensesScreen expenses={expenses} setExpenses={setExpenses} />;
       case "reports": return <ReportsScreen sales={sales} products={products} expenses={expenses} users={users.filter(u => u.storeSlug === activeStoreSlug)} company={company} />;
       case "users": return <UsersScreen users={users} setUsers={setUsers} currentUserId={currentUser!.id} currentUserSlug={activeStoreSlug !== "__platform__" ? activeStoreSlug : currentUser!.storeSlug} />;
+      case "appointments": return <AppointmentsScreen storeSlug={activeStoreSlug} />;
       case "settings": return <SettingsScreen {...resetCallbacks} company={company} setCompany={setCompany} companyLogo={companyLogo} setCompanyLogo={setCompanyLogo} payments={payments} setPayments={setPayments} />;
       default: return null;
     }
