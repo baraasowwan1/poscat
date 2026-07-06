@@ -44,15 +44,22 @@ export function ReportsScreen({ sales, products, expenses, users, company }: {
   const totalRevenue = completed.reduce((a, s) => a + s.amount, 0);
   const totalVat = totalRevenue * vatRate;
 
+  // Normalize any date format to Date object (ISO YYYY-MM-DD or Arabic locale)
+  function parseDate(raw: string): Date | null {
+    if (!raw) return null;
+    const d = new Date(raw); // works for ISO
+    if (!isNaN(d.getTime())) return d;
+    return null;
+  }
+
   // ── Real monthly revenue from sales ──────────────────────────────────────
   const MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
   const realMonthlyData = (() => {
     const year = new Date().getFullYear();
     const map = new Map<number, number>();
     completed.forEach(s => {
-      // parse date string — try multiple formats
-      const d = new Date(s.date);
-      if (!isNaN(d.getTime()) && d.getFullYear() === year)
+      const d = parseDate(s.date);
+      if (d && d.getFullYear() === year)
         map.set(d.getMonth(), (map.get(d.getMonth()) ?? 0) + s.amount);
     });
     return MONTHS.slice(0, new Date().getMonth() + 1).map((m, i) => ({ month: m, revenue: map.get(i) ?? 0 }));
