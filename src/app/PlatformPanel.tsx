@@ -316,11 +316,64 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
   const deleteStoreMutation = useDeleteStore();
   const toggleStoreMutation = useToggleStore();
 
-  // Normalize MongoDB response — API returns array directly or wrapped in data
+  // Normalize + map MongoDB store format to frontend TenantStore format
   const normalizeArr = (d: any) => Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
-  const stores   = normalizeArr(liveStores).length   > 0 ? normalizeArr(liveStores)   : (Array.isArray(storesProp) ? storesProp : []);
-  const plans    = normalizeArr(livePlans).length    > 0 ? normalizeArr(livePlans)    : (Array.isArray(plansProp)  ? plansProp  : []);
-  const allUsers = normalizeArr(liveUsers).length > 0 ? normalizeArr(liveUsers) : (Array.isArray(users) ? users : []);
+
+  function mapMongoStore(s: any): any {
+    return {
+      id:       s._id || s.id || s.storeId || "",
+      storeId:  s.storeId || s._id || "",
+      name:     s.name || "متجر",
+      slug:     s.slug || s.storeId || "",
+      sector:   s.sector || "supermarket",
+      ownerName: s.ownerName || "",
+      phone:    s.phone || "",
+      email:    s.email || "",
+      address:  s.address || "",
+      logo:     s.logo || "",
+      taxNumber: s.taxNumber || "",
+      currency: s.currency || "JOD",
+      timezone: s.timezone || "Asia/Amman",
+      planId:   s.planId || "starter",
+      status:   s.status || "trial",
+      subscriptionStatus: s.subscriptionStatus || s.status || "trial",
+      maxUsers:    s.maxUsers    ?? 3,
+      maxProducts: s.maxProducts ?? 500,
+      maxBranches: s.maxBranches ?? 1,
+      usersCount:    s.usersCount    ?? 0,
+      productsCount: s.productsCount ?? 0,
+      branchesCount: s.branchesCount ?? 0,
+      totalSales:    s.totalSales    ?? 0,
+      createdAt: s.createdAt ? new Date(s.createdAt).toISOString().slice(0,10) : "",
+      updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString().slice(0,10) : "",
+      trialEndsAt:       s.trialEndsAt       ? new Date(s.trialEndsAt).toISOString().slice(0,10)       : undefined,
+      subscriptionEndsAt: s.subscriptionEndsAt ? new Date(s.subscriptionEndsAt).toISOString().slice(0,10) : undefined,
+      customDomain: s.customDomain || "",
+    };
+  }
+
+  function mapMongoUser(u: any): any {
+    return {
+      id:          u._id || u.id || Date.now(),
+      name:        u.name || u.username || "",
+      email:       u.email || "",
+      username:    u.username || "",
+      role:        u.role || "كاشير",
+      status:      u.status || "نشط",
+      lastLogin:   u.lastLogin ? new Date(u.lastLogin).toLocaleString("ar-JO") : "",
+      permissions: u.permissions ?? 3,
+      password:    "",
+      storeSlug:   u.storeSlug || "",
+    };
+  }
+
+  const rawStores = normalizeArr(liveStores);
+  const rawUsers  = normalizeArr(liveUsers);
+  const rawPlans  = normalizeArr(livePlans);
+
+  const stores   = rawStores.length > 0 ? rawStores.map(mapMongoStore) : (Array.isArray(storesProp) ? storesProp : []);
+  const plans    = rawPlans.length  > 0 ? rawPlans  : (Array.isArray(plansProp)  ? plansProp  : []);
+  const allUsers = rawUsers.length  > 0 ? rawUsers.map(mapMongoUser) : (Array.isArray(users) ? users : []);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlan, setFilterPlan] = useState("all");
