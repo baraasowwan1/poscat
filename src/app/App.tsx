@@ -3166,16 +3166,15 @@ export default function App({
     lsGet("storeDataMap", {})
   );
 
-  // SaaS stores — MongoDB is primary. localStorage is just a session cache.
+  // Platform stores — ALWAYS from MongoDB. localStorage = cache only.
+  // Never show INIT_STORES to platform admin — only real data.
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
     const stored: TenantStore[] = lsGet("tenantStores", []);
-    if (stored.length > 0)
-      return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
-    // Only load INIT_STORES if no token exists (first-time demo experience)
-    const hasToken = !!localStorage.getItem("pos_token");
-    return hasToken ? [] : INIT_STORES;
+    // Filter out demo stores — only keep real stores (those created via API)
+    const realStores = stored.filter(s => !["s1","s2","s3","s4","s5"].includes(s.id));
+    return realStores.map(s => s.sector ? s : { ...s, sector: "supermarket" });
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -3354,7 +3353,12 @@ export default function App({
 
   useEffect(() => {
     const savedUser = _initSession.user;
-    if (savedUser?.role === "مالك المنصة") syncFromMongoDB(savedUser, false); // silent on mount
+    if (!savedUser || savedUser.role !== "مالك المنصة") return;
+    // Always try to sync from MongoDB on mount — clears any stale localStorage data
+    syncFromMongoDB(savedUser, false);
+    // Also re-sync every 5 minutes to stay fresh
+    const interval = setInterval(() => syncFromMongoDB(undefined, false), 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Real audit log helper ─────────────────────────────────────────────────
@@ -3402,8 +3406,8 @@ export default function App({
     setAuditLogs(prev => [loginLog, ...prev].slice(0, 500));
     if (user.role === "مالك المنصة") {
       setScreen("platform-dashboard");
-      // Auto-sync from MongoDB silently — no user action needed
-      setTimeout(() => syncFromMongoDB(user, false), 800);
+      // Auto-sync immediately from MongoDB — no user action needed
+      syncFromMongoDB(user, false);
     } else {
       setScreen("dashboard");
     }
