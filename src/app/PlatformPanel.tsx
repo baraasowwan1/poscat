@@ -507,6 +507,12 @@ export function PlatformStoresScreen({ stores: storesProp, setStores, plans: pla
                         <option value="suspended">معلق</option>
                         <option value="inactive">غير نشط</option>
                       </select>
+                      <button onClick={() => {
+                        storesApi.create(s).then(r => {
+                          if (r.ok) { toast.success(`✅ "${s.name}" حُفظ في السيرفر`); }
+                          else toast.error(`فشل الحفظ: ${r.error || "خطأ"}`);
+                        }).catch(() => toast.error("لا يوجد اتصال بالسيرفر"));
+                      }} title="حفظ في السيرفر" className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-all"><RefreshCw size={15} /></button>
                       <button onClick={() => setDeleteId(s.id)} title="حذف" className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"><Trash2 size={15} /></button>
                     </div>
                   </td>
@@ -790,9 +796,10 @@ function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
 
         <div className="overflow-y-auto flex-1 p-5 space-y-3">
           {users.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground">
-              <Key size={36} className="mx-auto mb-2 opacity-20" />
+            <div className="text-center py-8 text-muted-foreground space-y-3">
+              <Key size={36} className="mx-auto opacity-20" />
               <p className="text-sm">لا يوجد مستخدمون لهذا المتجر</p>
+              <p className="text-xs text-amber-400">هذا المتجر أُنشئ قبل تفعيل المزامنة مع السيرفر.<br/>احذفه وأنشئه من جديد لحفظه في قاعدة البيانات.</p>
             </div>
           ) : users.map(u => (
             <div key={u.id} className="rounded-xl border border-border bg-foreground/3 p-4 space-y-3">
@@ -852,7 +859,7 @@ function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
                     </div>
                     {u.password && <button onClick={() => copyToClipboard(u.password, "تم نسخ كلمة المرور")} className="p-1.5 rounded-lg bg-foreground/10 hover:bg-foreground/15 text-muted-foreground hover:text-foreground transition-all"><Copy size={13} /></button>}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button onClick={() => copyToClipboard(`اسم المستخدم: ${u.username}\nكلمة المرور: ${u.password}`, "تم نسخ بيانات الدخول")}
                       className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-bold transition-all border border-amber-500/15">
                       <Copy size={11} /> نسخ
@@ -860,6 +867,14 @@ function StoreCredsModal({ store, users, onUpdateUser, onClose }: {
                     <button onClick={() => startEdit(u)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-bold transition-all border border-blue-500/15">
                       <Edit2 size={11} /> تعديل
+                    </button>
+                    <button onClick={() => {
+                      usersApi.create({ ...u, password: u.password }).then(r => {
+                        if (r.ok) toast.success(`✅ تم حفظ "${u.username}" في السيرفر`);
+                        else toast.error(`فشل: ${r.error || "خطأ غير معروف"}`);
+                      }).catch(() => toast.error("لا يوجد اتصال بالسيرفر"));
+                    }} className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all border border-emerald-500/15">
+                      <RefreshCw size={11} /> حفظ في السيرفر
                     </button>
                   </div>
                 </div>
