@@ -182,16 +182,30 @@ function LoginScreen({ onLogin, users, stores }: {
         onLogin(apiUser, password);
         return;
       }
-      // Only block fallback for store-specific status errors
-      if (result.error && (result.error.includes("موقوف") || result.error.includes("معطّل"))) {
+      // Block fallback for specific errors
+      if (result.error) {
         setLoading(false);
-        setError({ msg: result.error, type: "error" }); return;
+        // Platform admin MUST login via API — no local fallback
+        const isPlatformAdmin = users.find(u => (u.username?.toLowerCase() === cred || u.email.toLowerCase() === cred) && u.role === "مالك المنصة");
+        if (isPlatformAdmin) {
+          setError({ msg: result.error.includes("اتصال") ? "لا يوجد اتصال بالسيرفر — تأكد من الاتصال بالإنترنت" : result.error, type: "error" });
+          return;
+        }
+        if (result.error.includes("موقوف") || result.error.includes("معطّل")) { setError({ msg: result.error, type: "error" }); return; }
       }
-      // For auth errors (wrong password, not found) → still try local fallback
-    } catch {}
+    } catch {
+      // Network error — check if it's platform admin trying to login
+      const isPlatformAdmin = users.find(u => (u.username?.toLowerCase() === cred || u.email.toLowerCase() === cred) && u.role === "مالك المنصة");
+      if (isPlatformAdmin) {
+        setLoading(false);
+        setError({ msg: "لا يوجد اتصال بالسيرفر — تأكد من الاتصال بالإنترنت", type: "error" });
+        return;
+      }
+    }
 
-    // ── Fallback: local users (offline mode) ──────────────────────────────
+    // ── Fallback: local users — STORE USERS ONLY (not platform admin) ──────
     const found = users.find(u =>
+      u.role !== "مالك المنصة" &&
       (u.username?.toLowerCase() === cred || u.email.toLowerCase() === cred) &&
       u.password === password
     );
@@ -2904,18 +2918,21 @@ function UsersScreen({ users, setUsers, currentUserId, currentUserSlug }: { user
     if (id === 9999) { toast.error("لا يمكن حذف مالك المنصة"); return; }
     if (!belongsToStore(id)) { toast.error("لا يمكنك حذف مستخدم من متجر آخر"); return; }
     if (id === currentUserId) { toast.error("لا يمكنك حذف حسابك الخاص"); return; }
+    const strId = String(id);
+    // Mark as deleted — prevents sync from re-adding this user
+    markUserDeleted(strId);
     // Delete from local state
-    setUsers(prev => prev.filter(u => u.id !== id));
-    // Delete from MongoDB — use string ID (works for both int IDs and ObjectId strings)
+    setUsers(prev => prev.filter(u => String(u.id) !== strId));
+    // Delete from MongoDB
     const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
     const token = localStorage.getItem("pos_token");
     if (token) {
-      fetch(`${BASE}/users/${id}`, {
+      fetch(`${BASE}/users/${strId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
+      }).then(r => { if (!r.ok) console.warn("Server delete failed for user", strId); }).catch(() => {});
     }
-    toast.success("تم حذف المستخدم");
+    toast.success("تم حذف المستخدم نهائياً");
   }
 
   const isEdit = !!editUser;
@@ -3146,6 +3163,22 @@ export default function App({
     try { localStorage.setItem(`sowwan_pos_${key}`, JSON.stringify(value)); } catch {}
   }
 
+  // ── Deleted IDs tracking — prevents sync from re-adding deleted items ────
+  const [deletedUserIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("sowwan_pos_deletedUserIds") || "[]")); } catch { return new Set(); }
+  });
+  const [deletedStoreIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("sowwan_pos_deletedStoreIds") || "[]")); } catch { return new Set(); }
+  });
+  function markUserDeleted(id: string) {
+    deletedUserIds.add(id);
+    try { localStorage.setItem("sowwan_pos_deletedUserIds", JSON.stringify([...deletedUserIds])); } catch {}
+  }
+  function markStoreDeleted(id: string) {
+    deletedStoreIds.add(id);
+    try { localStorage.setItem("sowwan_pos_deletedStoreIds", JSON.stringify([...deletedStoreIds])); } catch {}
+  }
+
   // ── Persistent state — survives page reload ───────────────────────────────
   // users — localStorage is source of truth, INIT_USERS as first-run seed
   const [users, setUsers] = useState<AppUser[]>(() => {
@@ -3179,14 +3212,14 @@ export default function App({
     lsGet("storeDataMap", {})
   );
 
-  // tenantStores — localStorage is source of truth, INIT_STORES as first-run seed
+  // tenantStores — NEVER load INIT_STORES. Start empty, load from MongoDB.
   const [tenantStores, setTenantStores] = useState<TenantStore[]>(() => {
     const ext = externalStores;
     if (Array.isArray(ext) && ext.length > 0) return ext;
     const stored: TenantStore[] = lsGet("tenantStores", []);
-    if (stored.length > 0)
-      return stored.map(s => s.sector ? s : { ...s, sector: "supermarket" });
-    return INIT_STORES; // first ever run — show demo stores
+    // Filter out demo stores that might be in localStorage
+    const real = stored.filter(s => !["s1","s2","s3","s4","s5"].includes(s.id));
+    return real.map(s => s.sector ? s : { ...s, sector: "supermarket" });
   });
   const [plans, setPlans] = useState<Plan[]>(() => lsGet("plans", INIT_PLANS));
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -3318,13 +3351,14 @@ export default function App({
       ]);
 
       let synced = 0;
-      // MERGE MongoDB data with local — don't delete local items, only add missing ones
+      // MERGE MongoDB data — skip any IDs the user explicitly deleted
       if (storesRes?.data && Array.isArray(storesRes.data) && storesRes.data.length > 0) {
-        const dbStores = storesRes.data.map(mapDbStore);
+        const dbStores = storesRes.data
+          .map(mapDbStore)
+          .filter(s => !deletedStoreIds.has(s.id) && !deletedStoreIds.has(s.storeId));
         setTenantStores(prev => {
           const localIds = new Set(prev.map(s => s.storeId));
-          const newFromDb = dbStores.filter(s => !localIds.has(s.storeId));
-          // Update existing + add new ones from DB
+          const newFromDb = dbStores.filter(s => !localIds.has(s.storeId) && !deletedStoreIds.has(s.id));
           const updated = prev.map(s => {
             const fromDb = dbStores.find(d => d.storeId === s.storeId);
             return fromDb ? { ...s, ...fromDb } : s;
@@ -3335,13 +3369,14 @@ export default function App({
       }
 
       if (usersRes?.data && Array.isArray(usersRes.data) && usersRes.data.length > 0) {
-        const mapped = usersRes.data.map(mapDbUser);
+        const mapped = usersRes.data
+          .map(mapDbUser)
+          .filter(u => !deletedUserIds.has(String(u.id))); // skip deleted
         setUsers(prev => {
-          // Keep local platform owner with password, add missing DB users
           const localOwner = prev.find(u => u.role === "مالك المنصة" && u.password);
           const localIds = new Set(prev.map(u => String(u.id)));
           const dbNonOwner = mapped.filter(u => u.role !== "مالك المنصة");
-          const newFromDb = dbNonOwner.filter(u => !localIds.has(String(u.id)));
+          const newFromDb = dbNonOwner.filter(u => !localIds.has(String(u.id)) && !deletedUserIds.has(String(u.id)));
           const updated = prev
             .filter(u => u.role !== "مالك المنصة")
             .map(u => { const fromDb = dbNonOwner.find(d => String(d.id) === String(u.id)); return fromDb ? { ...u, ...fromDb } : u; });
@@ -3371,8 +3406,14 @@ export default function App({
     }
   }
 
-  // No auto-sync on mount — sync only when user explicitly clicks the button
-  // This prevents overwriting local user actions with stale MongoDB data
+  // Auto-sync on mount ONLY if JWT already exists (from previous login)
+  useEffect(() => {
+    const token = localStorage.getItem("pos_token");
+    const savedUser = _initSession.user;
+    if (token && savedUser?.role === "مالك المنصة") {
+      syncFromMongoDB(savedUser, false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Real audit log helper ─────────────────────────────────────────────────
   function addAuditLog(action: string, entity: string, entityId: string, details: string, storeId?: string) {
@@ -3634,7 +3675,7 @@ export default function App({
           </div>
           <main className="flex-1 overflow-y-auto">
             {screen === "platform-dashboard" && <PlatformDashboardScreen stores={tenantStores} plans={plans} setScreen={setScreen} onImpersonate={handleImpersonate} />}
-            {screen === "platform-stores" && <PlatformStoresScreen stores={tenantStores} setStores={setTenantStores} plans={plans} onImpersonate={handleImpersonate} users={users} setUsers={setUsers} />}
+            {screen === "platform-stores" && <PlatformStoresScreen stores={tenantStores} setStores={setTenantStores} plans={plans} onImpersonate={handleImpersonate} users={users} setUsers={setUsers} onStoreDeleted={markStoreDeleted} />}
             {screen === "platform-users" && <PlatformUsersScreen stores={tenantStores} users={users} setUsers={setUsers} />}
             {screen === "platform-plans" && <PlatformPlansScreen plans={plans} setPlans={setPlans} stores={tenantStores} />}
             {screen === "platform-reports" && <PlatformReportsScreen stores={tenantStores} plans={plans} users={users} />}
