@@ -2389,7 +2389,11 @@ interface Appointment {
 const APPT_SERVICES = ["حلاقة رجالي","حلاقة نسائي","صبغة شعر","كيراتين","مانيكير","باديكير","عناية بالبشرة","رموش","مساج","تصفيف شعر","أخرى"];
 const APPT_TIMES = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"];
 
-function AppointmentsScreen({ storeSlug }: { storeSlug: string }) {
+function AppointmentsScreen({ storeSlug, customers, setCustomers }: {
+  storeSlug: string;
+  customers: Customer[];
+  setCustomers: (u: Customer[] | ((p: Customer[]) => Customer[])) => void;
+}) {
   const LS_KEY = `sowwan_pos_appts_${storeSlug}`;
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
@@ -2427,6 +2431,19 @@ function AppointmentsScreen({ storeSlug }: { storeSlug: string }) {
   }
   function changeStatus(id: string, status: Appointment["status"]) {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+  }
+
+  function convertToCustomer(a: Appointment) {
+    const exists = customers.some(c =>
+      c.name === a.customer || (a.phone && c.phone === a.phone)
+    );
+    if (exists) { toast.info(`"${a.customer}" موجود مسبقاً في قائمة العملاء`); return; }
+    const newC: Customer = {
+      id: uid(), name: a.customer, phone: a.phone || "", email: "",
+      city: "", totalPurchases: 0, visits: 1, points: 0, status: "عادي",
+    };
+    setCustomers(prev => [newC, ...prev]);
+    toast.success(`تمت إضافة "${a.customer}" كعميل جديد`);
   }
 
   const filtered = appointments.filter(a =>
@@ -2610,6 +2627,12 @@ function AppointmentsScreen({ storeSlug }: { storeSlug: string }) {
                   )}
                 </div>
                 <div className="flex gap-1">
+                  <button
+                    onClick={() => convertToCustomer(a)}
+                    title="إضافة كعميل"
+                    className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-emerald-400 transition-all">
+                    <UserCheck size={14} />
+                  </button>
                   <button onClick={() => { setEditAppt(a); setForm({ customer: a.customer, phone: a.phone, service: a.service, specialist: a.specialist, date: a.date, time: a.time, duration: a.duration, status: a.status, notes: a.notes }); setShowAdd(true); }}
                     className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-blue-400 transition-all"><Edit2 size={14} /></button>
                   <button onClick={() => deleteAppt(a.id)}
@@ -3236,7 +3259,7 @@ export default function App({
       case "expenses": return <ExpensesScreen expenses={expenses} setExpenses={setExpenses} />;
       case "reports": return <ReportsScreen sales={sales} products={products} expenses={expenses} users={users.filter(u => u.storeSlug === activeStoreSlug)} company={company} />;
       case "users": return <UsersScreen users={users} setUsers={setUsers} currentUserId={currentUser!.id} currentUserSlug={activeStoreSlug !== "__platform__" ? activeStoreSlug : currentUser!.storeSlug} />;
-      case "appointments": return <AppointmentsScreen storeSlug={activeStoreSlug} />;
+      case "appointments": return <AppointmentsScreen storeSlug={activeStoreSlug} customers={customers} setCustomers={setCustomers} />;
       case "settings": return <SettingsScreen {...resetCallbacks} company={company} setCompany={setCompany} companyLogo={companyLogo} setCompanyLogo={setCompanyLogo} payments={payments} setPayments={setPayments} />;
       default: return null;
     }
